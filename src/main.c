@@ -29,6 +29,10 @@
 #include <errno.h>
 #include <getopt.h>
 #include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <ell/ell.h>
 
 #include <ell/useful.h>
@@ -45,6 +49,7 @@
 #include "src/storage.h"
 #include "src/anqp.h"
 #include "src/netconfig.h"
+#include "src/crypto.h"
 
 #include "src/backtrace.h"
 
@@ -401,6 +406,68 @@ done:
 	return r;
 }
 
+#ifdef HAVE_DBUS
+/*
+ * Initialize a systemd encryption key for encrypting/decrypting credentials.
+ */
+static bool setup_system_key(void)
+{
+	int fd;
+	struct stat st;
+	const char *cred_dir;
+	void *key = NULL;
+	_auto_(l_free) char *path = NULL;
+	_auto_(l_free) char *key_id = NULL;
+	bool r = false;
+
+	key_id = l_settings_get_string(iwd_config, "General",
+							"SystemdEncrypt");
+	if (!key_id)
+		return true;
+
+	cred_dir = getenv("CREDENTIALS_DIRECTORY");
+	if (!cred_dir) {
+		l_warn("SystemdEncrypt enabled but CREDENTIALS_DIRECTORY not "
+			"set, check iwd.service file");
+		return false;
+	}
+
+	path = l_strdup_printf("%s/%s", cred_dir, key_id);
+
+	fd = open(path, O_RDONLY, 0);
+	if (fd < 0) {
+		l_warn("SystemdEncrypt: Cannot open secret: %s (%d)",
+				strerror(errno), errno);
+		return false;
+	}
+
+	if (fstat(fd, &st) < 0 || st.st_size == 0)
+		goto close_fd;
+
+	key = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (key == MAP_FAILED) {
+		l_warn("SystemdEncrypt: can't mmap secret: %s (%d)",
+				strerror(errno), errno);
+		goto close_fd;
+	}
+
+	if (mlock(key, st.st_size) < 0) {
+		l_warn("SystemdEncrypt: Failed to mlock secrets file");
+		goto unmap;
+	}
+
+	r = storage_init(key, st.st_size);
+	munlock(key, st.st_size);
+
+unmap:
+	munmap(key, st.st_size);
+close_fd:
+	close(fd);
+
+	return r;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
 	int exit_status;
@@ -533,6 +600,9 @@ int main(int argc, char *argv[])
 	l_dbus_set_ready_handler(dbus, dbus_ready, dbus, NULL);
 	l_dbus_set_disconnect_handler(dbus, dbus_disconnected, NULL, NULL);
 	dbus_init(dbus);
+
+	if (!setup_system_key())
+		goto failed_storage;
 #else
 	l_genl_request_family(genl, NL80211_GENL_NAME, nl80211_appeared,
 				NULL, NULL);
@@ -541,10 +611,11 @@ int main(int argc, char *argv[])
 	exit_status = l_main_run_with_signal(signal_handler, NULL);
 
 	iwd_modules_exit();
-#ifdef HAVE_DBUS
+	storage_exit();
+
+failed_storage:
 	dbus_exit();
 	l_dbus_destroy(dbus);
-#endif
 
 failed_dbus:
 	l_netlink_destroy(rtnl);
@@ -562,3 +633,4 @@ failed_dirs:
 
 	return exit_status;
 }
+
