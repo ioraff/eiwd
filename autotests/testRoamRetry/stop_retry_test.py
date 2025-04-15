@@ -15,7 +15,7 @@ from hostapd import HostapdCLI
 from hwsim import Hwsim
 
 class Test(unittest.TestCase):
-    # Test that we do not periodically retry roaming if the transision looks
+    # Test that we do not periodically retry roaming if the transition looks
     # like this: LOW [roam] [new bss] HIGH.
     def test_stop_retry(self):
         hwsim = Hwsim()

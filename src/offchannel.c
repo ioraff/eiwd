@@ -293,7 +293,7 @@ static void offchannel_mlme_notify(struct l_genl_msg *msg, void *user_data)
 		 *  - an event coming from an external ROC request (we just
 		 *    happened to have also sent an ROC request).
 		 *
-		 * We can't tell where the event originated until we recieve our
+		 * We can't tell where the event originated until we receive our
 		 * ACK so set early_cookie to track it.
 		 */
 		if (i->roc_cmd_id != 0 && l_genl_family_request_sent(nl80211,

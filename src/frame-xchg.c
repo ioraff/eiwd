@@ -342,8 +342,7 @@ static bool frame_watch_group_io_read(struct l_io *io, void *user_data)
 
 	nlmsg_len = bytes_read;
 
-	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
-					cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		struct nl_pktinfo pktinfo;
 
 		if (cmsg->cmsg_level != SOL_NETLINK)
@@ -575,6 +574,7 @@ drop:
 
 bool frame_watch_add(uint64_t wdev_id, uint32_t group_id, uint16_t frame_type,
 			const uint8_t *prefix, size_t prefix_len,
+			bool multicast_rx,
 			frame_watch_cb_t handler, void *user_data,
 			frame_xchg_destroy_func_t destroy)
 {
@@ -613,6 +613,10 @@ bool frame_watch_add(uint64_t wdev_id, uint32_t group_id, uint16_t frame_type,
 	l_genl_msg_append_attr(msg, NL80211_ATTR_FRAME_TYPE, 2, &frame_type);
 	l_genl_msg_append_attr(msg, NL80211_ATTR_FRAME_MATCH,
 				prefix_len, prefix);
+
+	if (multicast_rx)
+		l_genl_msg_append_attr(msg, NL80211_ATTR_RECEIVE_MULTICAST,
+					0, NULL);
 
 	if (group->id == 0)
 		l_genl_family_send(nl80211, msg, frame_watch_register_cb,
@@ -1194,7 +1198,7 @@ uint32_t frame_xchg_startv(uint64_t wdev_id, struct iovec *frame, uint32_t freq,
 		watch->prefix = prefix;
 		watch->cb = va_arg(resp_args, void *);
 		frame_watch_add(wdev_id, group_id, prefix->frame_type,
-				prefix->data, prefix->len,
+				prefix->data, prefix->len, false,
 				frame_xchg_resp_cb, fx, NULL);
 
 		if (!fx->rx_watches)

@@ -124,7 +124,7 @@ static bool verify_info(const struct dpp_uri_info *parsed,
 
 	assert(!memcmp(parsed->mac, expected->mac, 6));
 	assert(parsed->version == expected->version);
-	assert(parsed->boot_public != NULL);
+	assert(parsed->boot_public);
 
 	for (i = 0; result->expected_freqs[i]; i++)
 		assert(scan_freq_set_contains(parsed->freqs,
@@ -140,7 +140,7 @@ static void test_uri_parse(const void *data)
 
 	info = dpp_parse_uri(test_info->uri);
 	if (test_info->expect_fail) {
-		assert(info == NULL);
+		assert(!info);
 		return;
 	}
 

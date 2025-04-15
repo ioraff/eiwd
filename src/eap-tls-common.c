@@ -165,7 +165,7 @@ static void __eap_tls_common_state_reset(struct eap_state *eap)
 	 *
 	 * Drop the cache even if we have no indication that the
 	 * method failed but it just didn't succeed, to handle cases like
-	 * the server getting stuck and a timout occuring at a higher
+	 * the server getting stuck and a timeout occurring at a higher
 	 * layer.  The risk is that we may occasionally flush the session
 	 * data when there was only a momentary radio issue, invalid
 	 * phase2 credentials or decision to abort.  Those are not hot

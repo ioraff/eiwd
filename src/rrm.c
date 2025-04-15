@@ -798,7 +798,7 @@ static void rrm_add_frame_watches(struct rrm_state *rrm)
 	l_debug("");
 
 	frame_watch_add(rrm->wdev_id, 0, frame_type, prefix, sizeof(prefix),
-					rrm_frame_watch_cb, rrm, NULL);
+					false, rrm_frame_watch_cb, rrm, NULL);
 }
 
 static struct rrm_state *rrm_new_state(struct netdev *netdev)

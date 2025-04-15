@@ -52,7 +52,7 @@ static void prf_test(const void *data)
 
 	prf_len = strlen(test->prf) / 2;
 
-	printf("PRF    = %s (%d octects)\n", test->prf, prf_len);
+	printf("PRF    = %s (%d octets)\n", test->prf, prf_len);
 
 	result = prf_sha1(test->key, test->key_len, test->prefix,
 				test->prefix_len, test->data, test->data_len,

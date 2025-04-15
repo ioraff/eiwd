@@ -43,6 +43,7 @@
 #include "src/handshake.h"
 #include "src/erp.h"
 #include "src/band.h"
+#include "src/pmksa.h"
 
 static inline unsigned int n_ecc_groups(void)
 {
@@ -103,7 +104,14 @@ void __handshake_set_install_ext_tk_func(handshake_install_ext_tk_func_t func)
 	install_ext_tk = func;
 }
 
-void handshake_state_free(struct handshake_state *s)
+struct handshake_state *handshake_state_ref(struct handshake_state *s)
+{
+	__sync_fetch_and_add(&s->refcount, 1);
+
+	return s;
+}
+
+void handshake_state_unref(struct handshake_state *s)
 {
 	__typeof__(s->free) destroy;
 
@@ -117,6 +125,9 @@ void handshake_state_free(struct handshake_state *s)
 		return;
 	}
 
+	if (__sync_sub_and_fetch(&s->refcount, 1))
+		return;
+
 	l_free(s->authenticator_ie);
 	l_free(s->supplicant_ie);
 	l_free(s->authenticator_rsnxe);
@@ -127,6 +138,9 @@ void handshake_state_free(struct handshake_state *s)
 	l_free(s->fils_ip_req_ie);
 	l_free(s->fils_ip_resp_ie);
 	l_free(s->vendor_ies);
+
+	if (s->have_pmksa)
+		l_free(s->pmksa);
 
 	if (s->erp_cache)
 		erp_cache_put(s->erp_cache);
@@ -691,6 +705,11 @@ void handshake_state_install_ptk(struct handshake_state *s)
 {
 	s->ptk_complete = true;
 
+	if (!s->have_pmksa && IE_AKM_IS_SAE(s->akm_suite)) {
+		l_debug("Adding PMKSA expiration");
+		s->expiration = l_time_now() + pmksa_lifetime();
+	}
+
 	if (install_tk) {
 		uint32_t cipher = ie_rsn_cipher_suite_to_cipher(
 							s->pairwise_cipher);
@@ -1192,4 +1211,90 @@ done:
 		r = 0;
 
 	return r;
+}
+
+bool handshake_state_set_pmksa(struct handshake_state *s,
+					struct pmksa *pmksa)
+{
+	/* checks for both expiration || pmksa being set */
+	if (s->expiration)
+		return false;
+
+	s->pmksa = pmksa;
+	s->have_pmksa = true;
+
+	handshake_state_set_pmkid(s, pmksa->pmkid);
+	handshake_state_set_pmk(s, pmksa->pmk, pmksa->pmk_len);
+
+	return true;
+}
+
+static struct pmksa *handshake_state_steal_pmksa(struct handshake_state *s)
+{
+	struct pmksa *pmksa;
+	uint64_t now = l_time_now();
+
+	if (s->have_pmksa) {
+		pmksa = l_steal_ptr(s->pmksa);
+		s->have_pmksa = false;
+
+		if (l_time_after(now, pmksa->expiration)) {
+			pmksa_cache_free(pmksa);
+			pmksa = NULL;
+		}
+
+		return pmksa;
+	}
+
+	if (s->expiration && l_time_after(now, s->expiration)) {
+		s->expiration = 0;
+		return NULL;
+	}
+
+	if (!s->have_pmkid)
+		return NULL;
+
+	pmksa = l_new(struct pmksa, 1);
+	pmksa->expiration = s->expiration;
+	memcpy(pmksa->spa, s->spa, sizeof(s->spa));
+	memcpy(pmksa->aa, s->aa, sizeof(s->aa));
+	memcpy(pmksa->ssid, s->ssid, s->ssid_len);
+	pmksa->ssid_len = s->ssid_len;
+	pmksa->akm = s->akm_suite;
+	memcpy(pmksa->pmkid, s->pmkid, sizeof(s->pmkid));
+	pmksa->pmk_len = s->pmk_len;
+	memcpy(pmksa->pmk, s->pmk, s->pmk_len);
+
+	return pmksa;
+}
+
+void handshake_state_cache_pmksa(struct handshake_state *s)
+{
+	struct pmksa *pmksa = handshake_state_steal_pmksa(s);
+
+	if (!pmksa) {
+		l_debug("No PMKSA for "MAC, MAC_STR(s->aa));
+		return;
+	}
+
+	l_debug("Caching PMKSA for "MAC, MAC_STR(s->aa));
+
+	if (L_WARN_ON(pmksa_cache_put(pmksa) < 0))
+		pmksa_cache_free(pmksa);
+}
+
+bool handshake_state_remove_pmksa(struct handshake_state *s)
+{
+	struct pmksa *pmksa;
+
+	if (!s->have_pmksa)
+		return false;
+
+	pmksa = handshake_state_steal_pmksa(s);
+	if (!pmksa)
+		return false;
+
+	pmksa_cache_free(pmksa);
+
+	return true;
 }

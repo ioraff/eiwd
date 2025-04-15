@@ -578,7 +578,7 @@ static int analyze_pcap(const char *pathname)
 	printf("\n");
 	printf(" Number of packets: %lu\n", pkt_count);
 	printf("     Short packets: %lu\n", pkt_short);
-	printf("  Tuncated packets: %lu\n", pkt_trunc);
+	printf("  Truncated packets: %lu\n", pkt_trunc);
 	printf("\n");
 	printf("  Ethernet packets: %lu\n", pkt_ether);
 	printf("       PAE packets: %lu\n", pkt_pae);
@@ -718,29 +718,36 @@ static void usage(void)
 		"Usage:\n");
 	printf("\tiwmon [options]\n");
 	printf("Options:\n"
-		"\t-r, --read <file>      Read netlink PCAP trace file\n"
-		"\t-w, --write <file>     Write netlink PCAP trace file\n"
-		"\t-a, --analyze <file>   Analyze netlink PCAP trace file\n"
-		"\t-i, --interface <dev>  Use specified netlink monitor\n"
-		"\t-n, --nortnl           Don't show RTNL output\n"
-		"\t-y, --nowiphy          Don't show 'New Wiphy' output\n"
-		"\t-s, --noscan           Don't show scan result output\n"
-		"\t-e, --noies            Don't show IEs except SSID\n"
-		"\t-h, --help             Show help options\n");
+		"\t-r, --read <file>          Read netlink PCAP trace file\n"
+		"\t-w, --write <file>         Write netlink PCAP trace file\n"
+		"\t-a, --analyze <file>       Analyze netlink PCAP trace file\n"
+		"\t-i, --interface <dev>      Use specified netlink monitor\n"
+		"\t-n, --nortnl               Don't show RTNL output\n"
+		"\t-y, --nowiphy              Don't show 'New Wiphy' output\n"
+		"\t-s, --noscan               Don't show scan result output\n"
+		"\t-e, --noies                Don't show IEs except SSID\n"
+		"\t-t, --time-format <format> Time format to display. Either\n"
+						"\t\t\t\t   'delta' or 'utc'.\n"
+		"\t-W,--pcap-count            Maximum number of PCAP files\n"
+		"\t-C,--pcap-size             Maximum size (MB) of PCAP files\n"
+		"\t-h, --help                 Show help options\n");
 }
 
 static const struct option main_options[] = {
-	{ "read",      required_argument, NULL, 'r' },
-	{ "write",     required_argument, NULL, 'w' },
-	{ "analyze",   required_argument, NULL, 'a' },
-	{ "nl80211",   required_argument, NULL, 'F' },
-	{ "interface", required_argument, NULL, 'i' },
-	{ "nortnl",    no_argument,       NULL, 'n' },
-	{ "nowiphy",   no_argument,       NULL, 'y' },
-	{ "noscan",    no_argument,       NULL, 's' },
-	{ "noies",     no_argument,       NULL, 'e' },
-	{ "version",   no_argument,       NULL, 'v' },
-	{ "help",      no_argument,       NULL, 'h' },
+	{ "read",        required_argument, NULL, 'r' },
+	{ "write",       required_argument, NULL, 'w' },
+	{ "analyze",     required_argument, NULL, 'a' },
+	{ "nl80211",     required_argument, NULL, 'F' },
+	{ "interface",   required_argument, NULL, 'i' },
+	{ "nortnl",      no_argument,       NULL, 'n' },
+	{ "nowiphy",     no_argument,       NULL, 'y' },
+	{ "noscan",      no_argument,       NULL, 's' },
+	{ "noies",       no_argument,       NULL, 'e' },
+	{ "time-format", required_argument, NULL, 't' },
+	{ "pcap-count",  required_argument, NULL, 'W' },
+	{ "pcap-size",   required_argument, NULL, 'C' },
+	{ "version",     no_argument,       NULL, 'v' },
+	{ "help",        no_argument,       NULL, 'h' },
 	{ }
 };
 
@@ -754,7 +761,7 @@ int main(int argc, char *argv[])
 	for (;;) {
 		int opt;
 
-		opt = getopt_long(argc, argv, "r:w:a:i:nvhyse",
+		opt = getopt_long(argc, argv, "r:w:a:i:t:W:C:nvhyse",
 						main_options, NULL);
 		if (opt < 0)
 			break;
@@ -784,6 +791,35 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			config.noies = true;
+			break;
+		case 't':
+			if (!strcmp(optarg, "delta"))
+				config.time_format = TIME_FORMAT_DELTA;
+			else if (!strcmp(optarg, "utc"))
+				config.time_format = TIME_FORMAT_UTC;
+			else {
+				printf("Invalid time format '%s'", optarg);
+				return EXIT_FAILURE;
+			}
+
+			break;
+		case 'W':
+			if (l_safe_atou32(optarg,
+					&config.pcap_file_count) < 0 ||
+					config.pcap_file_count == 0) {
+				printf("Invalid file count '%s'\n", optarg);
+				return EXIT_FAILURE;
+			}
+
+			break;
+		case 'C':
+			if (l_safe_atou32(optarg,
+					&config.pcap_file_size) < 0 ||
+					config.pcap_file_size == 0) {
+				printf("Invalid file size '%s'\n", optarg);
+				return EXIT_FAILURE;
+			}
+
 			break;
 		case 'v':
 			printf("%s\n", VERSION);

@@ -137,7 +137,7 @@ class Test(unittest.TestCase):
         # since (T2 - T1) / 2 is shorter than 60s.  It is now about 10s since the last
         # renewal or 5s before the next DHCPREQUEST frame that is going to be lost.  We'll
         # wait T1 seconds, so until about 10s after the failed attempt, we'll check that
-        # there was no renewal by that time, just in case, and we'll reenable frame delivery.
+        # there was no renewal by that time, just in case, and we'll re-enable frame delivery.
         # We'll then wait another 60s and we should see the lease has been successfully
         # renewed some 10 seconds earlier on the 1st DHCPREQUEST retransmission.
         #

@@ -209,7 +209,7 @@ connect to that network.
    * - PasswordIdentifier
      - string
 
-       An identifer string to be used with the passphrase. This is used for
+       An identifier string to be used with the passphrase. This is used for
        WPA3-Personal (SAE) networks if the security has enabled password
        identifiers for clients.
    * - PreSharedKey

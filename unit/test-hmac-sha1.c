@@ -50,7 +50,7 @@ static void hmac_test(const void *data)
 
 	hmac_len = strlen(test->hmac) / 2;
 
-	printf("HMAC   = %s (%d octects)\n", test->hmac, hmac_len);
+	printf("HMAC   = %s (%d octets)\n", test->hmac, hmac_len);
 
 	result = hmac_sha1(test->key, test->key_len,
 				test->data, test->data_len, output, hmac_len);

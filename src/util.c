@@ -276,7 +276,7 @@ bool util_ip_prefix_tohl(const char *ip, uint8_t *prefix_out,
 	/* 'i' will be at most INET_ADDRSTRLEN - 1 */
 	l_strlcpy(no_prefix, ip, i + 1);
 
-	/* Check if IP preceeding prefix is valid */
+	/* Check if IP preceding prefix is valid */
 	if (inet_pton(AF_INET, no_prefix, &ia) != 1 || ia.s_addr == 0)
 		return false;
 
@@ -308,6 +308,36 @@ bool util_ip_prefix_tohl(const char *ip, uint8_t *prefix_out,
 
 	if (mask_out)
 		*mask_out = netmask;
+
+	return true;
+}
+
+/*
+ * Linearly maps @value (expected to be within range @a_start and @a_end) to
+ * a new value between @b_start and @b_end.
+ *
+ * Returns: false if
+ *   @value is not between @a_start and @a_end
+ *   @a_start/@a_end or @b_start/@b_end are equal.
+ */
+bool util_linear_map(double value, double a_start, double a_end,
+			double b_start, double b_end, double *mapped_value)
+{
+	/* Check value is within a's range */
+	if (a_start < a_end) {
+		if (value < a_start || value > a_end)
+			return false;
+	} else if (a_start > a_end) {
+		if (value > a_start || value < a_end)
+			return false;
+	} else
+		return false;
+
+	if (b_start == b_end)
+		return false;
+
+	*mapped_value = b_start + (((b_end - b_start) / (a_end - a_start)) *
+					(value - a_start));
 
 	return true;
 }
@@ -464,6 +494,11 @@ static void scan_channels_foreach(uint32_t channel, void *user_data)
 	uint32_t freq;
 
 	freq = band_channel_to_freq(channel, channels_data->band);
+	if (!freq) {
+		l_warn("invalid channel %u for band %u", channel,
+			channels_data->band);
+		return;
+	}
 
 	channels_data->func(freq, channels_data->user_data);
 }
@@ -600,4 +635,32 @@ struct scan_freq_set *scan_freq_set_clone(const struct scan_freq_set *set,
 		new->channels_6ghz = l_uintset_new_from_range(1, 233);
 
 	return new;
+}
+
+/* First 64 entries calculated by 1 / pow(n, 0.3) for n >= 1 */
+static const double rankmod_table[] = {
+	1.0000000000, 0.8122523964, 0.7192230933, 0.6597539554,
+	0.6170338627, 0.5841906811, 0.5577898253, 0.5358867313,
+	0.5172818580, 0.5011872336, 0.4870596972, 0.4745102806,
+	0.4632516708, 0.4530661223, 0.4437850034, 0.4352752816,
+	0.4274303178, 0.4201634287, 0.4134032816, 0.4070905315,
+	0.4011753236, 0.3956154062, 0.3903746872, 0.3854221125,
+	0.3807307877, 0.3762772797, 0.3720410580, 0.3680040435,
+	0.3641502401, 0.3604654325, 0.3569369365, 0.3535533906,
+	0.3503045821, 0.3471812999, 0.3441752105, 0.3412787518,
+	0.3384850430, 0.3357878061, 0.3331812996, 0.3306602598,
+	0.3282198502, 0.3258556179, 0.3235634544, 0.3213395618,
+	0.3191804229, 0.3170827751, 0.3150435863, 0.3130600345,
+	0.3111294892, 0.3092494947, 0.3074177553, 0.3056321221,
+	0.3038905808, 0.3021912409, 0.3005323264, 0.2989121662,
+	0.2973291870, 0.2957819051, 0.2942689208, 0.2927889114,
+	0.2913406263, 0.2899228820, 0.2885345572, 0.2871745887,
+};
+
+double util_exponential_decay(unsigned int n)
+{
+	if (n >= L_ARRAY_SIZE(rankmod_table))
+		return rankmod_table[L_ARRAY_SIZE(rankmod_table) - 1];
+
+	return rankmod_table[n];
 }

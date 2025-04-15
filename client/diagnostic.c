@@ -186,5 +186,5 @@ void diagnostic_display(struct l_dbus_message_iter *dict,
 	return;
 
 parse_error:
-	display_error("Error parsing dignostics");
+	display_error("Error parsing diagnostics");
 }

@@ -1,9 +1,11 @@
 AC_PREREQ([2.69])
-AC_INIT([iwd],[2.22])
+AC_INIT([iwd],[3.6])
 
 AC_CONFIG_HEADERS(config.h)
 AC_CONFIG_AUX_DIR(build-aux)
 AC_CONFIG_MACRO_DIR(build-aux)
+
+AC_REQUIRE_AUX_FILE([tap-driver.sh])
 
 AM_INIT_AUTOMAKE([foreign subdir-objects color-tests silent-rules
 					tar-pax no-dist-gzip dist-xz])
@@ -29,6 +31,7 @@ AC_PROG_CC_GCOV
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P
 AC_PROG_LN_S
+AC_PROG_AWK
 
 AC_SYS_LARGEFILE
 
@@ -302,7 +305,7 @@ if (test "${enable_external_ell}" = "yes"); then
 			test "${enable_monitor}" != "no" ||
 			test "${enable_wired}" = "yes" ||
 			test "${enable_hwsim}" = "yes"); then
-		ell_min_version="0.69"
+		ell_min_version="0.72"
 	else
 		ell_min_version="0.5"
 	fi

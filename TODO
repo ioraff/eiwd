@@ -110,7 +110,7 @@ Wireless monitor
 
 - Subscribe to all nl80211 multicast groups at startup
 
-  It seems the nlmon packets are limited to actual subscribed mutlicast
+  It seems the nlmon packets are limited to actual subscribed multicast
   groups.  To get a complete picture of all the nl80211 commands and
   events, it is required that iwmon adds membership to all multicast
   groups that the nl80211 lists.
@@ -234,7 +234,7 @@ Wireless daemon
 
 - Implement Enrollee Session Overlap Detection after WSC Protocol Run
 
-  WSC Best Practices v2.0.1, Section 3.15 describes an enhacement to detect
+  WSC Best Practices v2.0.1, Section 3.15 describes an enhancement to detect
   PBC session overlaps.  The Enrollee is asked to perform an extra scan without
   the PBC request in the ProbeRequest frames after EAP-WSC completes
   successfully.  If another AP in PBC mode is found, then a SessionOverlap

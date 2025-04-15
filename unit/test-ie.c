@@ -660,7 +660,7 @@ static void ie_test_concat_wsc(const void *data)
 	if (len > 0)
 		assert(!memcmp(res, test->expected_data, len));
 	else
-		assert(res == NULL);
+		assert(!res);
 
 	l_free(res);
 }
@@ -681,7 +681,7 @@ static void ie_test_encapsulate_wsc(const void *data)
 	if (extracted_len > 0)
 		assert(!memcmp(extracted, test->expected_data, extracted_len));
 	else
-		assert(extracted == NULL);
+		assert(!extracted);
 
 	packed = ie_tlv_encapsulate_wsc_payload(extracted, extracted_len,
 								&packed_len);

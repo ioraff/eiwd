@@ -104,7 +104,7 @@ class Test(unittest.TestCase):
 
         self.assertTrue(self.profile_is_encrypted('ssidCCMP.psk'))
 
-    # Tests that a profile that doesn't decrypt wont become a known network
+    # Tests that a profile that doesn't decrypt won't become a known network
     def test_decryption_failure(self):
         bad_config = \
 '''

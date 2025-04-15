@@ -45,22 +45,42 @@
 
 static uint64_t blacklist_multiplier;
 static uint64_t blacklist_initial_timeout;
+static uint64_t blacklist_roam_initial_timeout;
 static uint64_t blacklist_max_timeout;
 
 struct blacklist_entry {
 	uint8_t addr[6];
 	uint64_t added_time;
 	uint64_t expire_time;
+	enum blacklist_reason reason;
+};
+
+struct blacklist_search {
+	const uint8_t *addr;
+	enum blacklist_reason reason;
 };
 
 static struct l_queue *blacklist;
+
+static uint64_t get_reason_timeout(enum blacklist_reason reason)
+{
+	switch (reason) {
+	case BLACKLIST_REASON_CONNECT_FAILED:
+		return blacklist_initial_timeout;
+	case BLACKLIST_REASON_ROAM_REQUESTED:
+		return blacklist_roam_initial_timeout;
+	default:
+		l_warn("Unhandled blacklist reason: %u", reason);
+		return 0;
+	}
+}
 
 static bool check_if_expired(void *data, void *user_data)
 {
 	struct blacklist_entry *entry = data;
 	uint64_t now = l_get_u64(user_data);
 
-	if (l_time_diff(now, entry->added_time) > blacklist_max_timeout) {
+	if (l_time_after(now, entry->expire_time)) {
 		l_debug("Removing entry "MAC" on prune", MAC_STR(entry->addr));
 		l_free(entry);
 		return true;
@@ -87,17 +107,53 @@ static bool match_addr(const void *a, const void *b)
 	return false;
 }
 
-void blacklist_add_bss(const uint8_t *addr)
+static bool match_addr_and_reason(const void *a, const void *b)
+{
+	const struct blacklist_entry *entry = a;
+	const struct blacklist_search *search = b;
+
+	if (entry->reason != search->reason)
+		return false;
+
+	if (!memcmp(entry->addr, search->addr, 6))
+		return true;
+
+	return false;
+}
+
+void blacklist_add_bss(const uint8_t *addr, enum blacklist_reason reason)
 {
 	struct blacklist_entry *entry;
+	uint64_t timeout;
 
 	blacklist_prune();
+
+	timeout = get_reason_timeout(reason);
+	if (!timeout)
+		return;
 
 	entry = l_queue_find(blacklist, match_addr, addr);
 
 	if (entry) {
-		uint64_t offset = l_time_diff(entry->added_time,
-							entry->expire_time);
+		uint64_t offset;
+
+		if (reason < entry->reason) {
+			l_debug("Promoting "MAC" blacklist to reason %u",
+					MAC_STR(addr), reason);
+			/* Reset this to the new timeout and reason */
+			entry->reason = reason;
+			entry->added_time = l_time_now();
+			entry->expire_time = l_time_offset(entry->added_time,
+								timeout);
+			return;
+		} else if (reason > entry->reason) {
+			l_debug("Ignoring blacklist extension of "MAC", "
+				"current blacklist status is more severe!",
+				MAC_STR(addr));
+			return;
+		}
+
+		offset = l_time_diff(entry->added_time, entry->expire_time);
 
 		offset *= blacklist_multiplier;
 
@@ -112,40 +168,36 @@ void blacklist_add_bss(const uint8_t *addr)
 	entry = l_new(struct blacklist_entry, 1);
 
 	entry->added_time = l_time_now();
-	entry->expire_time = l_time_offset(entry->added_time,
-						blacklist_initial_timeout);
+	entry->expire_time = l_time_offset(entry->added_time, timeout);
+	entry->reason = reason;
 	memcpy(entry->addr, addr, 6);
 
 	l_queue_push_tail(blacklist, entry);
 }
 
-bool blacklist_contains_bss(const uint8_t *addr)
+bool blacklist_contains_bss(const uint8_t *addr, enum blacklist_reason reason)
 {
-	bool ret;
-	uint64_t time_now;
-	struct blacklist_entry *entry;
+	struct blacklist_search search = {
+		.addr = addr,
+		.reason = reason
+	};
 
 	blacklist_prune();
 
-	entry = l_queue_find(blacklist, match_addr, addr);
-
-	if (!entry)
-		return false;
-
-	time_now = l_time_now();
-
-	ret = l_time_after(time_now, entry->expire_time) ? false : true;
-
-	return ret;
+	return l_queue_find(blacklist, match_addr_and_reason, &search) != NULL;
 }
 
-void blacklist_remove_bss(const uint8_t *addr)
+void blacklist_remove_bss(const uint8_t *addr, enum blacklist_reason reason)
 {
 	struct blacklist_entry *entry;
+	struct blacklist_search search = {
+		.addr = addr,
+		.reason = reason
+	};
 
 	blacklist_prune();
 
-	entry = l_queue_remove_if(blacklist, match_addr, addr);
+	entry = l_queue_remove_if(blacklist, match_addr_and_reason, &search);
 
 	if (!entry)
 		return;
@@ -162,19 +214,39 @@ static int blacklist_init(void)
 		blacklist_initial_timeout = BLACKLIST_DEFAULT_TIMEOUT;
 
 	/* For easier user configuration the timeout values are in seconds */
-	blacklist_initial_timeout *= 1000000;
+	blacklist_initial_timeout *= L_USEC_PER_SEC;
+
+	if (!l_settings_get_uint64(config, "Blacklist",
+					"InitialRoamRequestedTimeout",
+					&blacklist_roam_initial_timeout))
+		blacklist_roam_initial_timeout = BLACKLIST_DEFAULT_TIMEOUT;
+
+	/* For easier user configuration the timeout values are in seconds */
+	blacklist_roam_initial_timeout *= L_USEC_PER_SEC;
 
 	if (!l_settings_get_uint64(config, "Blacklist",
 					"Multiplier",
 					&blacklist_multiplier))
 		blacklist_multiplier = BLACKLIST_DEFAULT_MULTIPLIER;
 
+	if (blacklist_multiplier == 0) {
+		l_warn("[Blacklist].Multiplier cannot be zero, setting to 1");
+		blacklist_multiplier = 1;
+	}
+
 	if (!l_settings_get_uint64(config, "Blacklist",
 					"MaximumTimeout",
 					&blacklist_max_timeout))
 		blacklist_max_timeout = BLACKLIST_DEFAULT_MAX_TIMEOUT;
 
-	blacklist_max_timeout *= 1000000;
+	blacklist_max_timeout *= L_USEC_PER_SEC;
+
+	if (blacklist_initial_timeout > blacklist_max_timeout)
+		l_warn("[Blacklist].InitialTimeout exceeded "
+			"[Blacklist].MaximumTimeout!");
+
+	if (!blacklist_initial_timeout)
+		l_debug("initial timeout was zero, blacklist will be disabled");
 
 	blacklist = l_queue_new();
 

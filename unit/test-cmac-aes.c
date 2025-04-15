@@ -51,7 +51,7 @@ static void cmac_test(const void *data)
 	for (i = 0; i < test->tag_len; i++)
 		sprintf(tag_str + (i * 2), "%02x", test->tag[i]);
 
-	printf("Tag    = %s (%zu octects)\n", tag_str, test->tag_len);
+	printf("Tag    = %s (%zu octets)\n", tag_str, test->tag_len);
 
 	result = cmac_aes(test->key, test->key_len,
 				test->msg, test->msg_len, tag, test->tag_len);

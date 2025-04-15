@@ -312,8 +312,9 @@ static bool pae_read(struct l_io *io, void *user_data)
 	return true;
 }
 
-static void pae_destroy()
+static void pae_destroy(void * user_data)
 {
+	(void)user_data;
 	pae_io = NULL;
 }
 

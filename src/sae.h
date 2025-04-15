@@ -34,3 +34,6 @@ struct auth_proto *sae_sm_new(struct handshake_state *hs,
 				sae_tx_authenticate_func_t tx_auth,
 				sae_tx_associate_func_t tx_assoc,
 				void *user_data);
+
+bool sae_sm_force_hunt_and_peck(struct auth_proto *ap);
+bool sae_sm_force_default_group(struct auth_proto *ap);

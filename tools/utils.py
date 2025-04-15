@@ -133,7 +133,7 @@ class Process(subprocess.Popen):
 					f.write(stamp + ': ')
 
 			# Write out a separator so multiple process calls per
-			# test are easer to read.
+			# test are easier to read.
 			if instance.hup:
 				f.write("Terminated: {}\n\n".format(instance.args))
 

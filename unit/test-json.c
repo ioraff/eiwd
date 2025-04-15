@@ -106,7 +106,7 @@ static void test_json(const void *data)
 			JSON_OPTIONAL("objnotfound", JSON_OBJECT, &objnotfound),
 			JSON_UNDEFINED));
 
-	assert(opt_not_found == NULL);
+	assert(!opt_not_found);
 	assert(!json_iter_is_valid(&objnotfound));
 
 	assert(!strcmp(tech, "infra"));

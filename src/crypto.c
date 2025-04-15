@@ -1212,7 +1212,7 @@ struct l_ecc_point *crypto_derive_sae_pwe_from_pt_ecc(const uint8_t *mac1,
 	struct l_ecc_point *pwe;
 
 	if (!pt || !curve)
-		return false;
+		return NULL;
 
 	hash = crypto_sae_hash_from_ecc_prime_len(CRYPTO_SAE_HASH_TO_ELEMENT,
 					l_ecc_curve_get_scalar_bytes(curve));

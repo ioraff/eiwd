@@ -26,6 +26,7 @@ struct band_chandef;
 struct scan_freq_set;
 struct band_freq_attrs;
 struct handshake_state;
+struct band;
 
 int nl80211_parse_attrs(struct l_genl_msg *msg, int tag, ...);
 int nl80211_parse_nested(struct l_genl_attr *attr, int type, int tag, ...);
@@ -95,8 +96,7 @@ struct l_genl_msg *nl80211_build_external_auth(uint32_t ifindex,
 int nl80211_parse_chandef(struct l_genl_msg *msg, struct band_chandef *out);
 int nl80211_parse_supported_frequencies(struct l_genl_attr *band_freqs,
 					struct scan_freq_set *supported_list,
-					struct band_freq_attrs *list,
-					size_t num_channels);
+					struct band *band);
 
 void nl80211_append_rsn_attributes(struct l_genl_msg *msg,
 						struct handshake_state *hs);

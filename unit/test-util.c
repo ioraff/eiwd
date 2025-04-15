@@ -184,6 +184,75 @@ static void ip_prefix_test(const void *data)
 	}
 }
 
+struct linear_map_case {
+	double value;
+	double a_start;
+	double a_end;
+	double b_start;
+	double b_end;
+	double expected;
+
+	bool fails : 1;
+};
+
+struct linear_map_case cases[] = {
+	/* Value out of range */
+	{
+		.value = 100,
+		.a_start = 1,
+		.a_end = 3,
+		.b_start = 10,
+		.b_end = 12,
+		.fails = true,
+	},
+	/* Ascending start range */
+	{
+		.value = 1,
+		.a_start = 0,
+		.a_end = 2,
+		.b_start = 10,
+		.b_end = 12,
+		.expected = 11,
+	},
+	/* Descending start range */
+	{
+		.value = 1,
+		.a_start = 2,
+		.a_end = 0,
+		.b_start = 10,
+		.b_end = 12,
+		.expected = 11,
+	},
+	/* Negatives */
+	{
+		.value = -1,
+		.a_start = -2,
+		.a_end = 0,
+		.b_start = 0,
+		.b_end = 2,
+		.expected = 1,
+	},
+};
+
+static void test_linear_map(const void *data)
+{
+	double mapped;
+	unsigned int i;
+
+	for (i = 0; i < L_ARRAY_SIZE(cases); i++) {
+		struct linear_map_case *c = &cases[i];
+		bool ret = util_linear_map(c->value, c->a_start, c->a_end,
+						c->b_start, c->b_end, &mapped);
+		if (c->fails) {
+			assert(ret == false);
+			continue;
+		}
+
+		assert(ret);
+		assert(mapped == c->expected);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
@@ -192,6 +261,7 @@ int main(int argc, char *argv[])
 	l_test_add("/util/get_domain/", get_domain_test, NULL);
 	l_test_add("/util/get_username/", get_username_test, NULL);
 	l_test_add("/util/ip_prefix/", ip_prefix_test, NULL);
+	l_test_add("/util/test_linear_map", test_linear_map, NULL);
 
 	return l_test_run();
 }

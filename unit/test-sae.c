@@ -101,6 +101,7 @@ static struct handshake_state *test_handshake_state_new(uint32_t ifindex)
 
 	ths->super.ifindex = ifindex;
 	ths->super.free = test_handshake_state_free;
+	ths->super.refcount = 1;
 
 	return &ths->super;
 }
@@ -183,7 +184,7 @@ static struct auth_proto *test_initialize(struct test_data *td)
 
 static void test_destruct(struct test_data *td)
 {
-	handshake_state_free(td->handshake);
+	handshake_state_unref(td->handshake);
 	l_free(td);
 }
 
@@ -459,8 +460,8 @@ static void test_bad_confirm(const void *arg)
 	assert(td1->tx_assoc_called);
 	assert(td2->status != 0);
 
-	handshake_state_free(hs1);
-	handshake_state_free(hs2);
+	handshake_state_unref(hs1);
+	handshake_state_unref(hs2);
 
 	ap1->free(ap1);
 	ap2->free(ap2);
@@ -544,8 +545,8 @@ static void test_confirm_after_accept(const void *arg)
 	assert(auth_proto_rx_associate(ap1, (uint8_t *)assoc, frame_len) == 0);
 	assert(auth_proto_rx_associate(ap2, (uint8_t *)assoc, frame_len) == 0);
 
-	handshake_state_free(hs1);
-	handshake_state_free(hs2);
+	handshake_state_unref(hs1);
+	handshake_state_unref(hs2);
 
 	auth_proto_free(ap1);
 	auth_proto_free(ap2);
@@ -621,8 +622,8 @@ static void test_end_to_end(const void *arg)
 	assert(auth_proto_rx_associate(ap1, (uint8_t *)assoc, frame_len) == 0);
 	assert(auth_proto_rx_associate(ap2, (uint8_t *)assoc, frame_len) == 0);
 
-	handshake_state_free(hs1);
-	handshake_state_free(hs2);
+	handshake_state_unref(hs1);
+	handshake_state_unref(hs2);
 
 	auth_proto_free(ap1);
 	auth_proto_free(ap2);

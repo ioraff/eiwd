@@ -7,7 +7,10 @@ from weakref import WeakValueDictionary
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from scapy.all import *
-from scapy.contrib.wpa_eapol import WPA_key
+try:
+    from scapy.contrib.wpa_eapol import WPA_key
+except:
+    from scapy.layers.eap import EAPOL_KEY
 
 import iwd
 from config import ctx
@@ -444,9 +447,15 @@ class Hwsim(iwd.AsyncOpAbstract):
 
         # NOTE: Expected key_info is 0x008a, with the install flag
         # this becomes 0x00ca.
-        eapol = WPA_key( descriptor_type = 2,
-                        key_info = 0x00ca, # Includes an invalid install flag!
-                        replay_counter = struct.pack(">Q", 100))
+        try:
+            eapol = WPA_key( descriptor_type = 2,
+                            key_info = 0x00ca, # Includes an invalid install flag!
+                            replay_counter = struct.pack(">Q", 100))
+        except:
+            eapol = EAPOL_KEY( key_descriptor_type = 2,
+                            install = 1,
+                            key_ack = 1,
+                            key_replay_counter = 1)
         frame /= LLC()/SNAP()/EAPOL(version="802.1X-2004", type="EAPOL-Key")
         frame /= eapol
 

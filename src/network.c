@@ -56,6 +56,7 @@
 #include "src/erp.h"
 #include "src/handshake.h"
 #include "src/band.h"
+#include "src/util.h"
 
 #define SAE_PT_SETTING "SAE-PT-Group%u"
 
@@ -212,31 +213,10 @@ void network_disconnected(struct network *network)
 		station_hide_network(network->station, network);
 }
 
-/* First 64 entries calculated by 1 / pow(n, 0.3) for n >= 1 */
-static const double rankmod_table[] = {
-	1.0000000000, 0.8122523964, 0.7192230933, 0.6597539554,
-	0.6170338627, 0.5841906811, 0.5577898253, 0.5358867313,
-	0.5172818580, 0.5011872336, 0.4870596972, 0.4745102806,
-	0.4632516708, 0.4530661223, 0.4437850034, 0.4352752816,
-	0.4274303178, 0.4201634287, 0.4134032816, 0.4070905315,
-	0.4011753236, 0.3956154062, 0.3903746872, 0.3854221125,
-	0.3807307877, 0.3762772797, 0.3720410580, 0.3680040435,
-	0.3641502401, 0.3604654325, 0.3569369365, 0.3535533906,
-	0.3503045821, 0.3471812999, 0.3441752105, 0.3412787518,
-	0.3384850430, 0.3357878061, 0.3331812996, 0.3306602598,
-	0.3282198502, 0.3258556179, 0.3235634544, 0.3213395618,
-	0.3191804229, 0.3170827751, 0.3150435863, 0.3130600345,
-	0.3111294892, 0.3092494947, 0.3074177553, 0.3056321221,
-	0.3038905808, 0.3021912409, 0.3005323264, 0.2989121662,
-	0.2973291870, 0.2957819051, 0.2942689208, 0.2927889114,
-	0.2913406263, 0.2899228820, 0.2885345572, 0.2871745887,
-};
-
 bool network_rankmod(const struct network *network, double *rankmod)
 {
 	struct network_info *info = network->info;
 	int n;
-	int nmax;
 
 	/*
 	 * Current policy is that only networks successfully connected
@@ -250,12 +230,7 @@ bool network_rankmod(const struct network *network, double *rankmod)
 	if (n < 0)
 		return false;
 
-	nmax = L_ARRAY_SIZE(rankmod_table);
-
-	if (n >= nmax)
-		n = nmax - 1;
-
-	*rankmod = rankmod_table[n];
+	*rankmod = util_exponential_decay(n);
 
 	return true;
 }
@@ -913,6 +888,9 @@ int network_can_connect_bss(struct network *network, const struct scan_bss *bss)
 		return ret;
 	}
 
+	if (IE_AKM_IS_OWE(rsn.akm_suites) && wiphy_owe_disabled(wiphy))
+		return -EPERM;
+
 	if (!config || !config->have_transition_disable) {
 		if (band == BAND_FREQ_6_GHZ)
 			goto mfp_no_tkip;
@@ -1282,6 +1260,7 @@ struct scan_bss *network_bss_select(struct network *network,
 	struct l_queue *bss_list = network->bss_list;
 	const struct l_queue_entry *bss_entry;
 	struct scan_bss *candidate = NULL;
+	bool skipped_open = false;
 
 	for (bss_entry = l_queue_get_entries(bss_list); bss_entry;
 			bss_entry = bss_entry->next) {
@@ -1301,30 +1280,35 @@ struct scan_bss *network_bss_select(struct network *network,
 		if (!candidate)
 			candidate = bss;
 
+		/* check if temporarily blacklisted */
+		if (l_queue_find(network->blacklist, match_bss, bss))
+			continue;
+
+		if (blacklist_contains_bss(bss->addr,
+					BLACKLIST_REASON_CONNECT_FAILED))
+			continue;
+
 		/* OWE Transition BSS */
 		if (bss->owe_trans) {
 			/* Don't want to connect to the Open BSS if possible */
-			if (!bss->rsne)
+			if (!bss->rsne) {
+				skipped_open = true;
 				continue;
+			}
 
 			/* Candidate is not OWE, set this as new candidate */
 			if (!(candidate->owe_trans && candidate->rsne))
 				candidate = bss;
 		}
 
-		/* check if temporarily blacklisted */
-		if (l_queue_find(network->blacklist, match_bss, bss))
-			continue;
-
-		if (!blacklist_contains_bss(bss->addr))
-			return bss;
+		return bss;
 	}
 
 	/*
 	 * No BSS was found, but if we are falling back to blacklisted BSS's we
 	 * can just use the first connectable candidate found above.
 	 */
-	if (fallback_to_blacklist)
+	if (fallback_to_blacklist || skipped_open)
 		return candidate;
 
 	return NULL;
@@ -2026,10 +2010,8 @@ void network_rank_update(struct network *network, bool connected)
 
 		L_WARN_ON(n < 0);
 
-		if (n >= (int) L_ARRAY_SIZE(rankmod_table))
-			n = L_ARRAY_SIZE(rankmod_table) - 1;
-
-		network->rank = rankmod_table[n] * best_bss->rank + USHRT_MAX;
+		network->rank =
+			util_exponential_decay(n) * best_bss->rank + USHRT_MAX;
 	} else
 		network->rank = best_bss->rank;
 

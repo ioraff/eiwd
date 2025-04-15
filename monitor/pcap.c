@@ -60,6 +60,7 @@ struct pcap {
 	bool closed;
 	uint32_t type;
 	uint32_t snaplen;
+	size_t size;
 };
 
 struct pcap *pcap_open(const char *pathname)
@@ -152,6 +153,8 @@ struct pcap *pcap_create(const char *pathname)
 		goto failed;
 	}
 
+	pcap->size += len;
+
 	return pcap;
 
 failed:
@@ -186,6 +189,11 @@ uint32_t pcap_get_snaplen(struct pcap *pcap)
 		return 0;
 
 	return pcap->snaplen;
+}
+
+size_t pcap_get_size(struct pcap *pcap)
+{
+	return pcap->size;
 }
 
 bool pcap_read(struct pcap *pcap, struct timeval *tv,
@@ -278,6 +286,8 @@ bool pcap_write(struct pcap *pcap, const struct timeval *tv,
 		pcap->closed = true;
 		return false;
 	}
+
+	pcap->size += written;
 
 	return true;
 }

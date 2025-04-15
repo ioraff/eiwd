@@ -79,7 +79,7 @@ struct ap_ops {
 					void *user_data);
 	/*
 	 * If not null, writes extra IEs to be added to the outgoing frame of
-	 * given type and, if it's not a beacon frame, in reponse to a given
+	 * given type and, if it's not a beacon frame, in response to a given
 	 * client frame.  May also react to the extra IEs in that frame.
 	 * Returns the number of bytes written which must be less than or
 	 * equal to the number returned by .get_extra_ies_len when called

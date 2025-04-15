@@ -66,7 +66,6 @@ static struct l_genl_family *nl80211;
 static uint8_t broadcast[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 static struct l_queue *dpp_list;
 static uint32_t mlme_watch;
-static uint32_t unicast_watch;
 
 static uint8_t dpp_prefix[] = { 0x04, 0x09, 0x50, 0x6f, 0x9a, 0x1a, 0x01 };
 
@@ -551,6 +550,8 @@ static void dpp_reset(struct dpp_sm *dpp)
 	dpp_free_auth_data(dpp);
 
 	dpp_property_changed_notify(dpp);
+
+	frame_watch_group_remove(dpp->wdev_id, FRAME_GROUP_DPP);
 
 	dpp->interface = DPP_INTERFACE_UNBOUND;
 
@@ -2000,7 +2001,7 @@ static void dpp_offchannel_timeout(int error, void *user_data)
 
 		/*
 		 * We have a pending agent request but it did not arrive in
-		 * time, we cant assume the enrollee will be waiting around
+		 * time, we can't assume the enrollee will be waiting around
 		 * for our response so cancel the request and continue waiting
 		 * for another request
 		 */
@@ -2721,7 +2722,7 @@ static void dpp_handle_pkex_exchange_response(struct dpp_sm *dpp,
 	}
 
 	if (version && version != dpp->pkex_version) {
-		l_debug("PKEX version does not match, igoring");
+		l_debug("PKEX version does not match, ignoring");
 		return;
 	}
 
@@ -3437,7 +3438,7 @@ static void dpp_handle_pkex_commit_reveal_request(struct dpp_sm *dpp,
 	dpp->peer_boot_public = l_ecc_point_from_data(dpp->curve,
 					L_ECC_POINT_TYPE_FULL, key, key_len);
 	if (!dpp->peer_boot_public) {
-		l_debug("peers boostrapping key did not validate");
+		l_debug("peers bootstrapping key did not validate");
 		goto failed;
 	}
 
@@ -3475,10 +3476,11 @@ failed:
 	dpp_reset(dpp);
 }
 
-static void dpp_handle_frame(struct dpp_sm *dpp,
-				const struct mmpdu_header *frame,
-				const void *body, size_t body_len)
+static void dpp_handle_frame(const struct mmpdu_header *frame,
+				const void *body, size_t body_len,
+				int rssi, void *user_data)
 {
+	struct dpp_sm *dpp = user_data;
 	const uint8_t *ptr;
 
 	/*
@@ -3596,7 +3598,7 @@ static void dpp_mlme_notify(struct l_genl_msg *msg, void *user_data)
 
 	/*
 	 * Only want to handle the no-ACK case. Re-transmitting an ACKed
-	 * frame likely wont do any good, at least in the case of DPP.
+	 * frame likely won't do any good, at least in the case of DPP.
 	 */
 	if (!ack)
 		goto retransmit;
@@ -3636,99 +3638,6 @@ retransmit:
 	dpp->frame_size = iov.iov_len;
 	dpp->retry_timeout = l_timeout_create(DPP_FRAME_RETRY_TIMEOUT,
 						dpp_frame_timeout, dpp, NULL);
-}
-
-static void dpp_unicast_notify(struct l_genl_msg *msg, void *user_data)
-{
-	struct dpp_sm *dpp;
-	const uint64_t *wdev_id = NULL;
-	struct l_genl_attr attr;
-	uint16_t type, len, frame_len;
-	const void *data;
-	const struct mmpdu_header *mpdu = NULL;
-	const uint8_t *body;
-	size_t body_len;
-
-	if (l_genl_msg_get_command(msg) != NL80211_CMD_FRAME)
-		return;
-
-	if (!l_genl_attr_init(&attr, msg))
-		return;
-
-	while (l_genl_attr_next(&attr, &type, &len, &data)) {
-		switch (type) {
-		case NL80211_ATTR_WDEV:
-			if (len != 8)
-				break;
-
-			wdev_id = data;
-			break;
-
-		case NL80211_ATTR_FRAME:
-			mpdu = mpdu_validate(data, len);
-			if (!mpdu) {
-				l_warn("Frame didn't validate as MMPDU");
-				return;
-			}
-
-			frame_len = len;
-			break;
-		}
-	}
-
-	if (!wdev_id) {
-		l_warn("Bad wdev attribute");
-		return;
-	}
-
-	dpp = l_queue_find(dpp_list, match_wdev, wdev_id);
-	if (!dpp)
-		return;
-
-	if (!mpdu) {
-		l_warn("Missing frame data");
-		return;
-	}
-
-	body = mmpdu_body(mpdu);
-	body_len = (const uint8_t *) mpdu + frame_len - body;
-
-	if (body_len < sizeof(dpp_prefix) ||
-			memcmp(body, dpp_prefix, sizeof(dpp_prefix)) != 0)
-		return;
-
-	dpp_handle_frame(dpp, mpdu, body, body_len);
-}
-
-static void dpp_frame_watch_cb(struct l_genl_msg *msg, void *user_data)
-{
-	if (l_genl_msg_get_error(msg) < 0)
-		l_error("Could not register frame watch type %04x: %i",
-			L_PTR_TO_UINT(user_data), l_genl_msg_get_error(msg));
-}
-
-/*
- * Special case the frame watch which includes the presence frames since they
- * require multicast support. This is only supported by ath9k, so adding
- * general support to frame-xchg isn't desireable.
- */
-static void dpp_frame_watch(struct dpp_sm *dpp, uint16_t frame_type,
-				const uint8_t *prefix, size_t prefix_len)
-{
-	struct l_genl_msg *msg;
-
-	msg = l_genl_msg_new_sized(NL80211_CMD_REGISTER_FRAME, 32 + prefix_len);
-
-	l_genl_msg_append_attr(msg, NL80211_ATTR_WDEV, 8, &dpp->wdev_id);
-	l_genl_msg_append_attr(msg, NL80211_ATTR_FRAME_TYPE, 2, &frame_type);
-	l_genl_msg_append_attr(msg, NL80211_ATTR_FRAME_MATCH,
-				prefix_len, prefix);
-	if (dpp->mcast_support)
-		l_genl_msg_append_attr(msg, NL80211_ATTR_RECEIVE_MULTICAST,
-					0, NULL);
-
-	l_genl_family_send(nl80211, msg, dpp_frame_watch_cb,
-					L_UINT_TO_PTR(frame_type), NULL);
 }
 
 static void dpp_start_enrollee(struct dpp_sm *dpp);
@@ -3820,8 +3729,6 @@ static void dpp_create(struct netdev *netdev)
 {
 	struct l_dbus *dbus = dbus_get_bus();
 	struct dpp_sm *dpp = l_new(struct dpp_sm, 1);
-	uint8_t dpp_conf_response_prefix[] = { 0x04, 0x0b };
-	uint8_t dpp_conf_request_prefix[] = { 0x04, 0x0a };
 	uint64_t wdev_id = netdev_get_wdev_id(netdev);
 
 	dpp->netdev = netdev;
@@ -3832,9 +3739,8 @@ static void dpp_create(struct netdev *netdev)
 	dpp->key_len = l_ecc_curve_get_scalar_bytes(dpp->curve);
 	dpp->nonce_len = dpp_nonce_len_from_key_len(dpp->key_len);
 	dpp->max_roc = wiphy_get_max_roc_duration(wiphy_find_by_wdev(wdev_id));
-	dpp->mcast_support = wiphy_has_ext_feature(
-				wiphy_find_by_wdev(dpp->wdev_id),
-				NL80211_EXT_FEATURE_MULTICAST_REGISTRATIONS);
+	dpp->mcast_support = wiphy_supports_multicast_rx(
+				wiphy_find_by_wdev(dpp->wdev_id));
 
 	l_ecdh_generate_key_pair(dpp->curve, &dpp->boot_private,
 					&dpp->boot_public);
@@ -3856,17 +3762,6 @@ static void dpp_create(struct netdev *netdev)
 	 * will destroy the dpp_sm.
 	 */
 	dpp->refcount = 2;
-
-	dpp_frame_watch(dpp, 0x00d0, dpp_prefix, sizeof(dpp_prefix));
-
-	frame_watch_add(netdev_get_wdev_id(netdev), 0, 0x00d0,
-				dpp_conf_response_prefix,
-				sizeof(dpp_conf_response_prefix),
-				dpp_handle_config_response_frame, dpp, NULL);
-	frame_watch_add(netdev_get_wdev_id(netdev), 0, 0x00d0,
-				dpp_conf_request_prefix,
-				sizeof(dpp_conf_request_prefix),
-				dpp_handle_config_request_frame, dpp, NULL);
 
 	dpp->known_network_watch = known_networks_watch_add(
 					dpp_known_network_watch, dpp, NULL);
@@ -4012,6 +3907,26 @@ done:
 	return 0;
 }
 
+static void dpp_add_frame_watches(struct dpp_sm *dpp, bool multicast_rx)
+{
+	uint8_t dpp_conf_response_prefix[] = { 0x04, 0x0b };
+	uint8_t dpp_conf_request_prefix[] = { 0x04, 0x0a };
+
+	frame_watch_add(dpp->wdev_id, FRAME_GROUP_DPP, 0x00d0,
+			dpp_prefix, sizeof(dpp_prefix), multicast_rx,
+			dpp_handle_frame, dpp, NULL);
+
+	frame_watch_add(dpp->wdev_id, FRAME_GROUP_DPP, 0x00d0,
+			dpp_conf_response_prefix,
+			sizeof(dpp_conf_response_prefix), false,
+			dpp_handle_config_response_frame, dpp, NULL);
+
+	frame_watch_add(dpp->wdev_id, FRAME_GROUP_DPP, 0x00d0,
+			dpp_conf_request_prefix,
+			sizeof(dpp_conf_request_prefix), false,
+			dpp_handle_config_request_frame, dpp, NULL);
+}
+
 static void dpp_start_enrollee(struct dpp_sm *dpp)
 {
 	uint32_t freq = band_channel_to_freq(6, BAND_FREQ_2_4_GHZ);
@@ -4050,6 +3965,8 @@ static struct l_dbus_message *dpp_dbus_start_enrollee(struct l_dbus *dbus,
 	dpp->state = DPP_STATE_PRESENCE;
 	dpp->role = DPP_CAPABILITY_ENROLLEE;
 	dpp->interface = DPP_INTERFACE_DPP;
+
+	dpp_add_frame_watches(dpp, false);
 
 	ret = dpp_try_disconnect_station(dpp, &wait_for_disconnect);
 	if (ret < 0) {
@@ -4187,6 +4104,8 @@ static struct l_dbus_message *dpp_start_configurator_common(
 		dpp->new_freq = bss->frequency;
 	} else
 		dpp->current_freq = bss->frequency;
+
+	dpp_add_frame_watches(dpp, responder && dpp->mcast_support);
 
 	dpp->uri = dpp_generate_uri(dpp->own_asn1, dpp->own_asn1_len, 2,
 					netdev_get_address(dpp->netdev),
@@ -4517,6 +4436,8 @@ static struct l_dbus_message *dpp_dbus_pkex_start_enrollee(struct l_dbus *dbus,
 	dpp->state = DPP_STATE_PKEX_EXCHANGE;
 	dpp->interface = DPP_INTERFACE_PKEX;
 
+	dpp_add_frame_watches(dpp, false);
+
 	ret = dpp_try_disconnect_station(dpp, &wait_for_disconnect);
 	if (ret < 0) {
 		dpp_reset(dpp);
@@ -4613,6 +4534,7 @@ static struct l_dbus_message *dpp_start_pkex_configurator(struct dpp_sm *dpp,
 	dpp->config = dpp_configuration_new(network_get_settings(network),
 						network_get_ssid(network),
 						hs->akm_suite);
+	dpp_add_frame_watches(dpp, dpp->mcast_support);
 
 	dpp_reset_protocol_timer(dpp, DPP_PKEX_PROTO_TIMEOUT);
 	dpp_property_changed_notify(dpp);
@@ -4741,11 +4663,6 @@ static int dpp_init(void)
 	mlme_watch = l_genl_family_register(nl80211, "mlme", dpp_mlme_notify,
 						NULL, NULL);
 
-	unicast_watch = l_genl_add_unicast_watch(iwd_get_genl(),
-						NL80211_GENL_NAME,
-						dpp_unicast_notify,
-						NULL, NULL);
-
 	dpp_list = l_queue_new();
 
 	return 0;
@@ -4759,8 +4676,6 @@ static void dpp_exit(void)
 	l_dbus_unregister_interface(dbus_get_bus(), IWD_DPP_PKEX_INTERFACE);
 
 	netdev_watch_remove(netdev_watch);
-
-	l_genl_remove_unicast_watch(iwd_get_genl(), unicast_watch);
 
 	l_genl_family_unregister(nl80211, mlme_watch);
 	mlme_watch = 0;

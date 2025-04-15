@@ -67,6 +67,7 @@ struct scan_bss {
 	uint8_t ssid[SSID_MAX_SIZE];
 	uint8_t ssid_len;
 	uint8_t utilization;
+	uint16_t sta_count;
 	uint8_t cc[3];
 	uint16_t rank;
 	uint64_t time_stamp;

@@ -648,7 +648,9 @@ struct l_genl_msg *nl80211_build_cmd_frame(uint32_t ifindex,
 	msg = l_genl_msg_new_sized(NL80211_CMD_FRAME, 128 + 512);
 
 	l_genl_msg_append_attr(msg, NL80211_ATTR_IFINDEX, 4, &ifindex);
-	l_genl_msg_append_attr(msg, NL80211_ATTR_WIPHY_FREQ, 4, &freq);
+
+	if (freq)
+		l_genl_msg_append_attr(msg, NL80211_ATTR_WIPHY_FREQ, 4, &freq);
 	l_genl_msg_append_attrv(msg, NL80211_ATTR_FRAME, iovs, iov_len + 1);
 
 	return msg;
@@ -695,8 +697,7 @@ int nl80211_parse_chandef(struct l_genl_msg *msg, struct band_chandef *out)
 
 int nl80211_parse_supported_frequencies(struct l_genl_attr *band_freqs,
 					struct scan_freq_set *supported_list,
-					struct band_freq_attrs *list,
-					size_t num_channels)
+					struct band *band)
 {
 	uint16_t type, len;
 	const void *data;
@@ -710,6 +711,7 @@ int nl80211_parse_supported_frequencies(struct l_genl_attr *band_freqs,
 	while (l_genl_attr_next(&nested, NULL, NULL, NULL)) {
 		uint32_t freq = 0;
 		struct band_freq_attrs freq_attr = { 0 };
+		enum band_freq out_band;
 
 		if (!l_genl_attr_recurse(&nested, &attr))
 			continue;
@@ -750,17 +752,20 @@ int nl80211_parse_supported_frequencies(struct l_genl_attr *band_freqs,
 		if (!freq)
 			continue;
 
-		channel = band_freq_to_channel(freq, NULL);
+		channel = band_freq_to_channel(freq, &out_band);
 		if (!channel)
 			continue;
 
-		if (L_WARN_ON(channel > num_channels))
+		if (L_WARN_ON(out_band != band->freq))
+			continue;
+
+		if (L_WARN_ON(channel > band->freqs_len))
 			continue;
 
 		if (supported_list)
 			scan_freq_set_add(supported_list, freq);
 
-		list[channel] = freq_attr;
+		band->freq_attrs[channel] = freq_attr;
 	}
 
 	return 0;

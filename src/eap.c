@@ -974,7 +974,7 @@ static void __eap_method_enable(struct eap_method_desc *start,
 
 	l_debug("");
 
-	if (start == NULL || stop == NULL)
+	if (!start || !stop)
 		return;
 
 	for (desc = start; desc < stop; desc++) {
@@ -992,7 +992,7 @@ static void __eap_method_disable(struct eap_method_desc *start,
 
 	l_debug("");
 
-	if (start == NULL || stop == NULL)
+	if (!start || !stop)
 		return;
 
 	for (desc = start; desc < stop; desc++) {

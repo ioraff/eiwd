@@ -234,7 +234,7 @@ uint32_t anqp_request(uint64_t wdev_id, const uint8_t *addr,
 	request->anqp_cb = cb;
 	request->anqp_destroy = destroy;
 	/*
-	 * WPA3 Specificiation version 3, Section 9.4:
+	 * WPA3 Specification version 3, Section 9.4:
 	 * "A STA shall use a randomized dialog token for every new GAS
 	 * exchange."
 	 */

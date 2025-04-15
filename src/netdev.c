@@ -65,6 +65,7 @@
 #include "src/frame-xchg.h"
 #include "src/diagnostic.h"
 #include "src/band.h"
+#include "src/pmksa.h"
 
 #ifndef ENOTSUPP
 #define ENOTSUPP 524
@@ -192,6 +193,7 @@ struct netdev {
 	bool in_reassoc : 1;
 	bool privacy : 1;
 	bool cqm_poll_fallback : 1;
+	bool external_auth : 1;
 };
 
 struct netdev_preauth_state {
@@ -375,6 +377,7 @@ struct handshake_state *netdev_handshake_state_new(struct netdev *netdev)
 
 	nhs->super.ifindex = netdev->index;
 	nhs->super.free = netdev_handshake_state_free;
+	nhs->super.refcount = 1;
 
 	nhs->netdev = netdev;
 	/*
@@ -458,6 +461,14 @@ const char *netdev_get_path(struct netdev *netdev)
 uint8_t netdev_get_rssi_level_idx(struct netdev *netdev)
 {
 	return netdev->cur_rssi_level_idx;
+}
+
+int netdev_get_low_signal_threshold(uint32_t frequency)
+{
+	if (frequency > 4000)
+		return LOW_SIGNAL_THRESHOLD_5GHZ;
+
+	return LOW_SIGNAL_THRESHOLD;
 }
 
 static void netdev_set_powered_result(int error, uint16_t type,
@@ -602,7 +613,7 @@ static bool netdev_parse_sta_info(struct l_genl_attr *attr,
 			if (!netdev_parse_bitrate(&nested, &info->rx_mcs_type,
 							&info->rx_bitrate,
 							&info->rx_mcs))
-				return false;
+				continue;
 
 			info->have_rx_bitrate = true;
 
@@ -618,7 +629,7 @@ static bool netdev_parse_sta_info(struct l_genl_attr *attr,
 			if (!netdev_parse_bitrate(&nested, &info->tx_mcs_type,
 							&info->tx_bitrate,
 							&info->tx_mcs))
-				return false;
+				continue;
 
 			info->have_tx_bitrate = true;
 
@@ -768,11 +779,12 @@ static void netdev_rssi_poll(struct l_timeout *timeout, void *user_data)
 /* To be called whenever operational or rssi_levels_num are updated */
 static void netdev_rssi_polling_update(struct netdev *netdev)
 {
-	if (wiphy_has_ext_feature(netdev->wiphy,
+	if (!netdev->cqm_poll_fallback && wiphy_has_ext_feature(netdev->wiphy,
 					NL80211_EXT_FEATURE_CQM_RSSI_LIST))
 		return;
 
-	if (netdev->operational && netdev->rssi_levels_num > 0) {
+	if (netdev->operational && (netdev->rssi_levels_num > 0 ||
+					netdev->cqm_poll_fallback)) {
 		if (netdev->rssi_poll_timeout)
 			return;
 
@@ -826,7 +838,7 @@ static void netdev_connect_free(struct netdev *netdev)
 	eapol_preauth_cancel(netdev->index);
 
 	if (netdev->handshake) {
-		handshake_state_free(netdev->handshake);
+		handshake_state_unref(netdev->handshake);
 		netdev->handshake = NULL;
 	}
 
@@ -871,6 +883,7 @@ static void netdev_connect_free(struct netdev *netdev)
 	netdev->expect_connect_failure = false;
 	netdev->cur_rssi_low = false;
 	netdev->privacy = false;
+	netdev->external_auth = false;
 
 	if (netdev->connect_cmd) {
 		l_genl_msg_unref(netdev->connect_cmd);
@@ -1096,6 +1109,7 @@ static void netdev_free(void *data)
 		l_timeout_remove(netdev->rssi_poll_timeout);
 
 	scan_wdev_remove(netdev->wdev_id);
+	frame_watch_wdev_remove(netdev->wdev_id);
 
 	watchlist_destroy(&netdev->station_watches);
 
@@ -1493,6 +1507,105 @@ static void netdev_setting_keys_failed(struct netdev_handshake_state *nhs,
 	handshake_event(&nhs->super, HANDSHAKE_EVENT_SETTING_KEYS_FAILED, &err);
 }
 
+static bool netdev_match_addr(const void *a, const void *b)
+{
+	const struct netdev *netdev = a;
+	const uint8_t *addr = b;
+
+	return memcmp(netdev->addr, addr, ETH_ALEN) == 0;
+}
+
+static struct netdev *netdev_find_by_address(const uint8_t *addr)
+{
+	return l_queue_find(netdev_list, netdev_match_addr, addr);
+}
+
+static void netdev_pmksa_driver_add(const struct pmksa *pmksa)
+{
+	struct l_genl_msg *msg;
+	struct netdev *netdev = netdev_find_by_address(pmksa->spa);
+	uint32_t expiration = (uint32_t)pmksa->expiration;
+
+	if (!netdev)
+		return;
+
+	/* Only need to set the PMKSA into the kernel for fullmac drivers */
+	if (wiphy_supports_cmds_auth_assoc(netdev->wiphy))
+		return;
+
+	l_debug("Adding PMKSA to kernel");
+
+	msg = l_genl_msg_new(NL80211_CMD_SET_PMKSA);
+
+	l_genl_msg_append_attr(msg, NL80211_ATTR_IFINDEX, 4, &netdev->index);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_PMKID, 16, pmksa->pmkid);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_MAC, ETH_ALEN, pmksa->aa);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_SSID,
+				pmksa->ssid_len, pmksa->ssid);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_PMK_LIFETIME, 4, &expiration);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_PMK,
+				pmksa->pmk_len, pmksa->pmk);
+
+	if (!l_genl_family_send(nl80211, msg, NULL, NULL, NULL))
+		l_error("error sending SET_PMKSA");
+}
+
+static void netdev_pmksa_driver_remove(const struct pmksa *pmksa)
+{
+	struct l_genl_msg *msg;
+	struct netdev *netdev = netdev_find_by_address(pmksa->spa);
+
+	if (!netdev)
+		return;
+
+	/* Only need to set the PMKSA into the kernel for fullmac drivers */
+	if (wiphy_supports_cmds_auth_assoc(netdev->wiphy))
+		return;
+
+	l_debug("Removing PMKSA from kernel");
+
+	msg = l_genl_msg_new(NL80211_CMD_DEL_PMKSA);
+
+	l_genl_msg_append_attr(msg, NL80211_ATTR_IFINDEX, 4, &netdev->index);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_PMKID, 16, pmksa->pmkid);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_MAC, ETH_ALEN, pmksa->aa);
+	l_genl_msg_append_attr(msg, NL80211_ATTR_SSID,
+				pmksa->ssid_len, pmksa->ssid);
+
+	if (!l_genl_family_send(nl80211, msg, NULL, NULL, NULL))
+		l_error("error sending DEL_PMKSA");
+}
+
+static void netdev_flush_pmksa(struct netdev *netdev)
+{
+	struct l_genl_msg *msg;
+
+	/*
+	* We only utilize the kernel's PMKSA cache for fullmac cards,
+	* so no need to flush if this is a softmac.
+	*/
+	if (wiphy_supports_cmds_auth_assoc(netdev->wiphy))
+		return;
+
+	msg = l_genl_msg_new(NL80211_CMD_FLUSH_PMKSA);
+
+	l_genl_msg_append_attr(msg, NL80211_ATTR_IFINDEX, 4, &netdev->index);
+
+	if (!l_genl_family_send(nl80211, msg, NULL, NULL, NULL))
+		l_error("Failed to flush PMKSA for %u", netdev->index);
+}
+
+static void netdev_pmksa_driver_flush(void)
+{
+	const struct l_queue_entry *e;
+
+	for (e = l_queue_get_entries(netdev_list); e; e = e->next) {
+		struct netdev *netdev = e->data;
+
+		netdev_flush_pmksa(netdev);
+	}
+}
+
 static void try_handshake_complete(struct netdev_handshake_state *nhs)
 {
 	l_debug("ptk_installed: %u, gtk_installed: %u, igtk_installed: %u",
@@ -1512,6 +1625,8 @@ static void try_handshake_complete(struct netdev_handshake_state *nhs)
 		nhs->complete = true;
 
 		l_debug("Invoking handshake_event()");
+
+		handshake_state_cache_pmksa(&nhs->super);
 
 		if (handshake_event(&nhs->super, HANDSHAKE_EVENT_COMPLETE))
 			return;
@@ -2166,7 +2281,7 @@ static void netdev_set_pmk(struct handshake_state *hs, const uint8_t *pmk,
 				struct netdev_handshake_state, super);
 	struct netdev *netdev = nhs->netdev;
 
-	/* Only relevent for 8021x offload */
+	/* Only relevant for 8021x offload */
 	if (nhs->type != CONNECTION_TYPE_8021X_OFFLOAD)
 		return;
 
@@ -2278,7 +2393,7 @@ static void netdev_qos_map_cb(struct l_genl_msg *msg, void *user_data)
 		return;
 
 	ext_error = l_genl_msg_get_extended_error(msg);
-	l_error("Couuld not set QoS Map in kernel: %s",
+	l_error("Could not set QoS Map in kernel: %s",
 			ext_error ? ext_error : strerror(-err));
 }
 
@@ -2351,7 +2466,7 @@ static void netdev_get_oci_cb(struct l_genl_msg *msg, void *user_data)
 done:
 	if (netdev->ap) {
 		/*
-		 * Cant do much here. IWD assumes every kernel/driver supports
+		 * Can't do much here. IWD assumes every kernel/driver supports
 		 * this. There is no way of detecting support either.
 		 */
 		if (L_WARN_ON(err < 0))
@@ -2454,7 +2569,19 @@ static struct l_genl_msg *netdev_build_cmd_connect(struct netdev *netdev,
 {
 	struct netdev_handshake_state *nhs =
 		l_container_of(hs, struct netdev_handshake_state, super);
-	uint32_t auth_type = IE_AKM_IS_SAE(hs->akm_suite) ?
+	/*
+	 * Choose Open system auth type if PMKSA caching is used for an SAE AKM:
+	 *
+	 * IEEE 802.11-2020 Table 9-151
+	 *   - SAE authentication:
+	 *       3 (SAE) for SAE Authentication
+	 *       0 (open) for PMKSA caching
+	 *   - FT authentication over SAE:
+	 *       3 (SAE) for FT Initial Mobility Domain Association
+	 *       0 (open) for FT Initial Mobility Domain Association over
+	 *         PMKSA caching
+	 */
+	uint32_t auth_type = IE_AKM_IS_SAE(hs->akm_suite) && !hs->have_pmksa ?
 					NL80211_AUTHTYPE_SAE :
 					NL80211_AUTHTYPE_OPEN_SYSTEM;
 	enum mpdu_management_subtype subtype = prev_bssid ?
@@ -2478,7 +2605,10 @@ static struct l_genl_msg *netdev_build_cmd_connect(struct netdev *netdev,
 
 	switch (nhs->type) {
 	case CONNECTION_TYPE_SOFTMAC:
+		break;
 	case CONNECTION_TYPE_FULLMAC:
+		l_genl_msg_append_attr(msg,
+				NL80211_ATTR_EXTERNAL_AUTH_SUPPORT, 0, NULL);
 		break;
 	case CONNECTION_TYPE_SAE_OFFLOAD:
 		l_genl_msg_append_attr(msg, NL80211_ATTR_SAE_PASSWORD,
@@ -3392,6 +3522,84 @@ static void netdev_fils_tx_associate(struct iovec *fils_iov, size_t n_fils_iov,
 	}
 }
 
+static void netdev_external_auth_frame_cb(struct l_genl_msg *msg,
+							void *user_data)
+{
+	int error = l_genl_msg_get_error(msg);
+
+	if (error < 0)
+		l_debug("Failed to send External Auth Frame: %s(%d)",
+				strerror(-error), -error);
+}
+
+static void netdev_external_auth_sae_tx_authenticate(const uint8_t *body,
+					size_t body_len, void *user_data)
+{
+	struct netdev *netdev = user_data;
+	struct handshake_state *hs = netdev->handshake;
+	uint16_t frame_type = MPDU_MANAGEMENT_SUBTYPE_AUTHENTICATION << 4;
+	struct iovec iov[2];
+	struct l_genl_msg *msg;
+	uint8_t algorithm[2] = { 0x03, 0x00 };
+
+	l_debug("");
+
+	iov[0].iov_base = &algorithm;
+	iov[0].iov_len = sizeof(algorithm);
+	iov[1].iov_base = (void *) body;
+	iov[1].iov_len = body_len;
+
+	msg = nl80211_build_cmd_frame(netdev->index, frame_type,
+					hs->spa, hs->aa, 0, iov, 2);
+
+	if (l_genl_family_send(nl80211, msg, netdev_external_auth_frame_cb,
+				netdev, NULL) > 0)
+		return;
+
+	l_genl_msg_unref(msg);
+}
+
+static void netdev_external_auth_cb(struct l_genl_msg *msg, void *user_data)
+{
+	int error = l_genl_msg_get_error(msg);
+
+	if (error < 0)
+		l_debug("Failed to send External Auth: %s(%d)",
+				strerror(-error), -error);
+}
+
+static void netdev_send_external_auth(struct netdev *netdev,
+							uint16_t status_code)
+{
+	struct handshake_state *hs = netdev->handshake;
+	struct l_genl_msg *msg =
+		nl80211_build_external_auth(netdev->index, status_code,
+						hs->ssid, hs->ssid_len, hs->aa);
+
+	if (l_genl_family_send(nl80211, msg, netdev_external_auth_cb,
+				netdev, NULL) > 0)
+		return;
+
+	l_genl_msg_unref(msg);
+}
+
+static void netdev_external_auth_sae_tx_associate(void *user_data)
+{
+	struct netdev *netdev = user_data;
+
+	l_debug("");
+
+	netdev_send_external_auth(netdev, MMPDU_STATUS_CODE_SUCCESS);
+	netdev_ensure_eapol_registered(netdev);
+
+	/*
+	 * Free the auth proto now. With external auth there is no associate
+	 * event which is where this normally gets cleaned up.
+	 */
+	auth_proto_free(netdev->ap);
+	netdev->ap = NULL;
+}
+
 struct rtnl_data {
 	struct netdev *netdev;
 	uint8_t addr[ETH_ALEN];
@@ -3400,6 +3608,10 @@ struct rtnl_data {
 
 static int netdev_begin_connection(struct netdev *netdev)
 {
+	struct netdev_handshake_state *nhs =
+		l_container_of(netdev->handshake,
+				struct netdev_handshake_state, super);
+
 	if (netdev->connect_cmd) {
 		netdev->connect_cmd_id = l_genl_family_send(nl80211,
 						netdev->connect_cmd,
@@ -3419,7 +3631,7 @@ static int netdev_begin_connection(struct netdev *netdev)
 	 */
 	handshake_state_set_supplicant_address(netdev->handshake, netdev->addr);
 
-	if (netdev->ap) {
+	if (netdev->ap && nhs->type == CONNECTION_TYPE_SOFTMAC) {
 		if (!auth_proto_start(netdev->ap))
 			goto failed;
 
@@ -3712,6 +3924,15 @@ static void netdev_cmd_set_cqm_cb(struct l_genl_msg *msg, void *user_data)
 static int netdev_cqm_rssi_update(struct netdev *netdev)
 {
 	struct l_genl_msg *msg;
+	struct netdev_handshake_state *nhs = l_container_of(netdev->handshake,
+				struct netdev_handshake_state, super);
+
+	/*
+	 * Fullmac cards handle roaming in firmware, there is no need to set
+	 * CQM thresholds
+	 */
+	if (nhs->type == CONNECTION_TYPE_FULLMAC)
+		return 0;
 
 	l_debug("");
 
@@ -3870,7 +4091,11 @@ static int netdev_handshake_state_setup_connection_type(
 		if (softmac && wiphy_has_feature(wiphy, NL80211_FEATURE_SAE))
 			goto softmac;
 
-		return -EINVAL;
+		/* FullMAC uses EXTERNAL_AUTH and reuses this feature bit */
+		if (wiphy_has_feature(wiphy, NL80211_FEATURE_SAE))
+			goto fullmac;
+
+		return -ENOTSUP;
 	case IE_RSN_AKM_SUITE_FILS_SHA256:
 	case IE_RSN_AKM_SUITE_FILS_SHA384:
 	case IE_RSN_AKM_SUITE_FT_OVER_FILS_SHA256:
@@ -3941,40 +4166,55 @@ static void netdev_connect_common(struct netdev *netdev,
 		goto done;
 	}
 
-	if (nhs->type != CONNECTION_TYPE_SOFTMAC)
+	/*
+	 * If SAE, and we have a valid PMKSA cache we can skip the entire SAE
+	 * protocol and authenticate using the cached keys.
+	 */
+	if (IE_AKM_IS_SAE(hs->akm_suite) && hs->have_pmksa) {
+		l_debug("Skipping SAE by using PMKSA cache");
+		goto build_cmd_connect;
+	}
+
+	if (!IE_AKM_IS_SAE(hs->akm_suite) ||
+				nhs->type == CONNECTION_TYPE_SAE_OFFLOAD)
 		goto build_cmd_connect;
 
-	switch (hs->akm_suite) {
-	case IE_RSN_AKM_SUITE_SAE_SHA256:
-	case IE_RSN_AKM_SUITE_FT_OVER_SAE_SHA256:
+	if (nhs->type == CONNECTION_TYPE_SOFTMAC)
 		netdev->ap = sae_sm_new(hs, netdev_sae_tx_authenticate,
-						netdev_sae_tx_associate,
-						netdev);
+					netdev_sae_tx_associate,
+					netdev);
+	else {
+		netdev->ap =
+			sae_sm_new(hs, netdev_external_auth_sae_tx_authenticate,
+					netdev_external_auth_sae_tx_associate,
+					netdev);
+		sae_sm_force_default_group(netdev->ap);
+		sae_sm_force_hunt_and_peck(netdev->ap);
+	}
 
-		if (sae_sm_is_h2e(netdev->ap)) {
-			uint8_t own_rsnxe[20];
+	if (sae_sm_is_h2e(netdev->ap)) {
+		uint8_t own_rsnxe[20];
 
-			if (wiphy_get_rsnxe(netdev->wiphy,
-					own_rsnxe, sizeof(own_rsnxe))) {
-				set_bit(own_rsnxe + 2, IE_RSNX_SAE_H2E);
-				handshake_state_set_supplicant_rsnxe(hs,
-								own_rsnxe);
-			}
-		}
-
-		break;
-	default:
-build_cmd_connect:
-		cmd_connect = netdev_build_cmd_connect(netdev, hs, prev_bssid);
-
-		if (!is_offload(hs) && (is_rsn || hs->settings_8021x)) {
-			sm = eapol_sm_new(hs);
-
-			if (nhs->type == CONNECTION_TYPE_8021X_OFFLOAD)
-				eapol_sm_set_require_handshake(sm, false);
+		if (wiphy_get_rsnxe(netdev->wiphy,
+				own_rsnxe, sizeof(own_rsnxe))) {
+			set_bit(own_rsnxe + 2, IE_RSNX_SAE_H2E);
+			handshake_state_set_supplicant_rsnxe(hs,
+							own_rsnxe);
 		}
 	}
 
+	if (nhs->type == CONNECTION_TYPE_SOFTMAC)
+		goto done;
+
+build_cmd_connect:
+	cmd_connect = netdev_build_cmd_connect(netdev, hs, prev_bssid);
+
+	if (!is_offload(hs) && (is_rsn || hs->settings_8021x)) {
+		sm = eapol_sm_new(hs);
+
+		if (nhs->type == CONNECTION_TYPE_8021X_OFFLOAD)
+			eapol_sm_set_require_handshake(sm, false);
+	}
 done:
 	netdev->connect_cmd = cmd_connect;
 	netdev->event_filter = event_filter;
@@ -4148,7 +4388,7 @@ int netdev_reassociate(struct netdev *netdev, const struct scan_bss *target_bss,
 		eapol_sm_free(old_sm);
 
 	if (old_hs)
-		handshake_state_free(old_hs);
+		handshake_state_unref(old_hs);
 
 	return 0;
 }
@@ -4481,6 +4721,52 @@ static void netdev_qos_map_frame_event(const struct mmpdu_header *hdr,
 		return;
 
 	netdev_send_qos_map_set(netdev, body + 4, body_len - 4);
+}
+
+static void netdev_sae_external_auth_frame_event(const struct mmpdu_header *hdr,
+					const void *body, size_t body_len,
+					int rssi, void *user_data)
+{
+	struct netdev *netdev = user_data;
+	const struct mmpdu_authentication *auth;
+	uint16_t status_code = MMPDU_STATUS_CODE_UNSPECIFIED;
+	int ret;
+
+	if (!netdev->external_auth)
+		return;
+
+	if (!netdev->ap)
+		return;
+
+	auth = mmpdu_body(hdr);
+	/*
+	 * Allows station to persist settings so it does not retry
+	 * the higher order ECC group again
+	 */
+	if (L_CPU_TO_LE16(auth->status) ==
+			MMPDU_STATUS_CODE_UNSUPP_FINITE_CYCLIC_GROUP &&
+			netdev->event_filter)
+		netdev->event_filter(netdev, NETDEV_EVENT_ECC_GROUP_RETRY,
+					NULL, netdev->user_data);
+
+	ret = auth_proto_rx_authenticate(netdev->ap, (const void *) hdr,
+					mmpdu_header_len(hdr) + body_len);
+
+	switch (ret) {
+	case 0:
+	case -EAGAIN:
+		return;
+	case -ENOMSG:
+	case -EBADMSG:
+		return;
+	default:
+		break;
+	}
+
+	if (ret > 0)
+		status_code = (uint16_t)ret;
+
+	netdev_send_external_auth(netdev, status_code);
 }
 
 static void netdev_preauth_cb(const uint8_t *pmk, void *user_data)
@@ -5307,6 +5593,58 @@ static void netdev_control_port_frame_event(struct l_genl_msg *msg,
 						frame, frame_len, unencrypted);
 }
 
+static void netdev_external_auth_event(struct l_genl_msg *msg,
+							struct netdev *netdev)
+{
+	const uint8_t *bssid;
+	struct iovec ssid;
+	uint32_t akm;
+	uint32_t action;
+	struct handshake_state *hs = netdev->handshake;
+
+	if (L_WARN_ON(nl80211_parse_attrs(msg, NL80211_ATTR_AKM_SUITES, &akm,
+				NL80211_ATTR_EXTERNAL_AUTH_ACTION, &action,
+				NL80211_ATTR_BSSID, &bssid,
+				NL80211_ATTR_SSID, &ssid,
+				NL80211_ATTR_UNSPEC) < 0))
+		return;
+
+	if (!L_IN_SET(action, NL80211_EXTERNAL_AUTH_START,
+				NL80211_EXTERNAL_AUTH_ABORT))
+		return;
+
+	/* kernel sends SAE_SHA256 AKM in BE order for legacy reasons */
+	if (!L_IN_SET(akm, CRYPTO_AKM_SAE_SHA256, CRYPTO_AKM_FT_OVER_SAE_SHA256,
+				L_CPU_TO_BE32(CRYPTO_AKM_SAE_SHA256))) {
+		l_warn("Unknown AKM: %08x", akm);
+		return;
+	}
+
+	if (action == NL80211_EXTERNAL_AUTH_ABORT) {
+		l_warn("External Auth Aborted");
+		goto error;
+	}
+
+	if (hs->ssid_len != ssid.iov_len ||
+			memcmp(hs->ssid, ssid.iov_base, hs->ssid_len)) {
+		l_warn("Target SSID mismatch");
+		goto error;
+	}
+
+	if (memcmp(hs->aa, bssid, ETH_ALEN)) {
+		l_warn("Target BSSID mismatch");
+		goto error;
+	}
+
+	if (auth_proto_start(netdev->ap)) {
+		netdev->external_auth = true;
+		return;
+	}
+
+error:
+	netdev_send_external_auth(netdev, MMPDU_STATUS_CODE_UNSPECIFIED);
+}
+
 static void netdev_unicast_notify(struct l_genl_msg *msg, void *user_data)
 {
 	struct netdev *netdev = NULL;
@@ -5343,6 +5681,9 @@ static void netdev_unicast_notify(struct l_genl_msg *msg, void *user_data)
 	switch (cmd) {
 	case NL80211_CMD_CONTROL_PORT_FRAME:
 		netdev_control_port_frame_event(msg, netdev);
+		break;
+	case NL80211_CMD_EXTERNAL_AUTH:
+		netdev_external_auth_event(msg, netdev);
 		break;
 	}
 }
@@ -5518,33 +5859,41 @@ static void netdev_add_station_frame_watches(struct netdev *netdev)
 	static const uint8_t action_ft_response_prefix[] =  { 0x06, 0x02 };
 	static const uint8_t auth_ft_response_prefix[] = { 0x02, 0x00 };
 	static const uint8_t action_qos_map_prefix[] = { 0x01, 0x04 };
+	static const uint8_t auth_sae_prefix[] = { 0x03, 0x00 };
 	uint64_t wdev = netdev->wdev_id;
 
 	/* Subscribe to Management -> Action -> RM -> Neighbor Report frames */
 	frame_watch_add(wdev, 0, 0x00d0, action_neighbor_report_prefix,
-			sizeof(action_neighbor_report_prefix),
+			sizeof(action_neighbor_report_prefix), false,
 			netdev_neighbor_report_frame_event, netdev, NULL);
 
 	frame_watch_add(wdev, 0, 0x00d0, action_sa_query_resp_prefix,
-			sizeof(action_sa_query_resp_prefix),
+			sizeof(action_sa_query_resp_prefix), false,
 			netdev_sa_query_resp_frame_event, netdev, NULL);
 
 	frame_watch_add(wdev, 0, 0x00d0, action_sa_query_req_prefix,
-			sizeof(action_sa_query_req_prefix),
+			sizeof(action_sa_query_req_prefix), false,
 			netdev_sa_query_req_frame_event, netdev, NULL);
 
 	frame_watch_add(wdev, 0, 0x00d0, action_ft_response_prefix,
-			sizeof(action_ft_response_prefix),
+			sizeof(action_ft_response_prefix), false,
 			netdev_ft_response_frame_event, netdev, NULL);
 
 	frame_watch_add(wdev, 0, 0x00b0, auth_ft_response_prefix,
-			sizeof(auth_ft_response_prefix),
+			sizeof(auth_ft_response_prefix), false,
 			netdev_ft_auth_response_frame_event, netdev, NULL);
 
 	if (wiphy_supports_qos_set_map(netdev->wiphy))
 		frame_watch_add(wdev, 0, 0x00d0, action_qos_map_prefix,
-				sizeof(action_qos_map_prefix),
+				sizeof(action_qos_map_prefix), false,
 				netdev_qos_map_frame_event, netdev, NULL);
+
+	if (!wiphy_supports_cmds_auth_assoc(netdev->wiphy) &&
+			wiphy_has_feature(netdev->wiphy, NL80211_FEATURE_SAE))
+		frame_watch_add(wdev, 0, 0x00b0,
+				auth_sae_prefix, sizeof(auth_sae_prefix),
+				false, netdev_sae_external_auth_frame_event,
+				netdev, NULL);
 }
 
 static void netdev_setup_interface(struct netdev *netdev)
@@ -6292,6 +6641,16 @@ struct netdev *netdev_create_from_genl(struct l_genl_msg *msg,
 
 	netdev_get_link(netdev);
 
+	/*
+	 * Call the netdev-specific variant to flush only this devices PMKSA
+	 * cache in the kernel. This will make IWD's cache and the kernel's
+	 * cache consistent, i.e. no entries
+	 *
+	 * TODO: If we ever are storing PMKSA's on disk we would first need to
+	 *       flush, then add all the PMKSA entries at this time.
+	 */
+	netdev_flush_pmksa(netdev);
+
 	return netdev;
 }
 
@@ -6406,6 +6765,10 @@ static int netdev_init(void)
 	__eapol_set_install_pmk_func(netdev_set_pmk);
 
 	__ft_set_tx_frame_func(netdev_tx_ft_frame);
+
+	__pmksa_set_driver_callbacks(netdev_pmksa_driver_add,
+					netdev_pmksa_driver_remove,
+					netdev_pmksa_driver_flush);
 
 	unicast_watch = l_genl_add_unicast_watch(genl, NL80211_GENL_NAME,
 						netdev_unicast_notify,

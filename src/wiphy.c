@@ -72,6 +72,9 @@ enum driver_flag {
 	DEFAULT_IF = 0x1,
 	FORCE_PAE = 0x2,
 	POWER_SAVE_DISABLE = 0x4,
+	OWE_DISABLE = 0x8,
+	MULTICAST_RX_DISABLE = 0x10,
+	SAE_DISABLE = 0x20,
 };
 
 struct driver_flag_name {
@@ -100,9 +103,12 @@ static const struct driver_info driver_infos[] = {
 };
 
 static const struct driver_flag_name driver_flag_names[] = {
-	{ "DefaultInterface", DEFAULT_IF },
-	{ "ForcePae",         FORCE_PAE },
-	{ "PowerSaveDisable", POWER_SAVE_DISABLE },
+	{ "DefaultInterface",   DEFAULT_IF },
+	{ "ForcePae",           FORCE_PAE },
+	{ "PowerSaveDisable",   POWER_SAVE_DISABLE },
+	{ "OweDisable",         OWE_DISABLE },
+	{ "MulticastRxDisable", MULTICAST_RX_DISABLE },
+	{ "SaeDisable",         SAE_DISABLE },
 };
 
 struct wiphy {
@@ -198,6 +204,9 @@ uint16_t wiphy_get_supported_ciphers(struct wiphy *wiphy, uint16_t mask)
 
 static bool wiphy_can_connect_sae(struct wiphy *wiphy)
 {
+	if (wiphy->driver_flags & SAE_DISABLE)
+		return false;
+
 	/*
 	 * WPA3 Specification version 3, Section 2.2:
 	 * A STA shall not enable WEP and TKIP
@@ -230,29 +239,22 @@ static bool wiphy_can_connect_sae(struct wiphy *wiphy)
 	 *    cards the entire SAE protocol as well as the subsequent 4-way
 	 *    handshake are all done in the driver/firmware (fullMAC).
 	 *
-	 * 3. TODO: Cards which allow SAE in userspace via CMD_EXTERNAL_AUTH.
+	 * 3. Cards which allow SAE in userspace via CMD_EXTERNAL_AUTH.
 	 *    These cards do not support AUTH/ASSOC commands but do implement
 	 *    CMD_EXTERNAL_AUTH which is supposed to allow userspace to
-	 *    generate Authenticate frames as it would for case (1). As it
-	 *    stands today only one driver actually uses CMD_EXTERNAL_AUTH and
-	 *    for now IWD will not allow connections to SAE networks using this
-	 *    mechanism.
+	 *    generate Authenticate frames as it would for case (1).
 	 */
-
 	if (wiphy_has_feature(wiphy, NL80211_FEATURE_SAE)) {
 		/* Case (1) */
 		if (wiphy->support_cmds_auth_assoc)
 			return true;
 
-		/*
-		 * Case (3)
-		 *
-		 * TODO: No support for CMD_EXTERNAL_AUTH yet.
-		 */
-		l_warn("SAE unsupported: %s needs CMD_EXTERNAL_AUTH for SAE",
+		/* Case 3 */
+		iwd_notice(IWD_NOTICE_CONNECT_INFO,
+			"FullMAC driver: %s using SAE.  Expect EXTERNAL_AUTH",
 			wiphy->driver_str);
 
-		return false;
+		return true;
 	}
 
 	/* Case (2) */
@@ -349,7 +351,8 @@ wpa2_personal:
 		if (info->akm_suites & IE_RSN_AKM_SUITE_PSK)
 			return IE_RSN_AKM_SUITE_PSK;
 	} else if (security == SECURITY_NONE) {
-		if (info->akm_suites & IE_RSN_AKM_SUITE_OWE)
+		if (info->akm_suites & IE_RSN_AKM_SUITE_OWE &&
+					!wiphy_owe_disabled(wiphy))
 			return IE_RSN_AKM_SUITE_OWE;
 	}
 
@@ -647,7 +650,7 @@ bool wiphy_rrm_capable(struct wiphy *wiphy)
 	return false;
 }
 
-bool wiphy_has_ext_feature(struct wiphy *wiphy, uint32_t feature)
+bool wiphy_has_ext_feature(const struct wiphy *wiphy, uint32_t feature)
 {
 	return feature < sizeof(wiphy->ext_features) * 8 &&
 		test_bit(wiphy->ext_features, feature);
@@ -721,6 +724,14 @@ bool wiphy_control_port_enabled(struct wiphy *wiphy)
 bool wiphy_power_save_disabled(struct wiphy *wiphy)
 {
 	if (wiphy->driver_flags & POWER_SAVE_DISABLE)
+		return true;
+
+	return false;
+}
+
+bool wiphy_owe_disabled(struct wiphy *wiphy)
+{
+	if (wiphy->driver_flags & OWE_DISABLE)
 		return true;
 
 	return false;
@@ -943,6 +954,13 @@ bool wiphy_supports_uapsd(const struct wiphy *wiphy)
 bool wiphy_supports_cmd_offchannel(const struct wiphy *wiphy)
 {
 	return wiphy->supports_cmd_offchannel;
+}
+
+bool wiphy_supports_multicast_rx(const struct wiphy *wiphy)
+{
+	return wiphy_has_ext_feature(wiphy,
+				NL80211_EXT_FEATURE_MULTICAST_REGISTRATIONS) &&
+				!(wiphy->driver_flags & MULTICAST_RX_DISABLE);
 }
 
 const uint8_t *wiphy_get_ht_capabilities(const struct wiphy *wiphy,
@@ -1355,6 +1373,15 @@ static void wiphy_print_basic_info(struct wiphy *wiphy)
 		if (wiphy->driver_flags & POWER_SAVE_DISABLE)
 			flags = l_strv_append(flags, "PowerSaveDisable");
 
+		if (wiphy->driver_flags & OWE_DISABLE)
+			flags = l_strv_append(flags, "OweDisable");
+
+		if (wiphy->driver_flags & MULTICAST_RX_DISABLE)
+			flags = l_strv_append(flags, "MulticastRxDisable");
+
+		if (wiphy->driver_flags & SAE_DISABLE)
+			flags = l_strv_append(flags, "SaeDisable");
+
 		joined = l_strjoinv(flags, ' ');
 
 		l_info("\tDriver Flags: %s", joined);
@@ -1692,8 +1719,7 @@ static void parse_supported_bands(struct wiphy *wiphy,
 			case NL80211_BAND_ATTR_FREQS:
 				nl80211_parse_supported_frequencies(&attr,
 							wiphy->supported_freqs,
-							band->freq_attrs,
-							band->freqs_len);
+							band);
 				break;
 
 			case NL80211_BAND_ATTR_RATES:
@@ -2233,9 +2259,7 @@ static void wiphy_dump_callback(struct l_genl_msg *msg,
 			 * theory no new frequencies should be added so there
 			 * should never be any stale values.
 			 */
-			nl80211_parse_supported_frequencies(&attr, NULL,
-							band->freq_attrs,
-							band->freqs_len);
+			nl80211_parse_supported_frequencies(&attr, NULL, band);
 		}
 	}
 }
@@ -2288,7 +2312,7 @@ static void wiphy_dump_after_regdom(struct wiphy *wiphy)
 	}
 
 	/*
-	 * Another update while dumping wiphy. This next dump should supercede
+	 * Another update while dumping wiphy. This next dump should supersede
 	 * the first and not result in a DONE event until this new dump is
 	 * finished. This is because the disabled frequencies are in an unknown
 	 * state and could cause incorrect behavior by any watchers.

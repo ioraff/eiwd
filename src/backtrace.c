@@ -54,7 +54,7 @@ void __iwd_backtrace_print(unsigned int offset)
 	int pathlen;
 	pid_t pid;
 
-	if (program_exec == NULL)
+	if (!program_exec)
 		return;
 
 	pathlen = strlen(program_path);
@@ -186,7 +186,7 @@ void __iwd_backtrace_init(void)
 		}
 	}
 
-	if (program_exec == NULL)
+	if (!program_exec)
 		return;
 
 	program_path = getcwd(cwd, sizeof(cwd));

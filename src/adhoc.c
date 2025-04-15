@@ -94,13 +94,13 @@ static void adhoc_sta_free(void *data)
 		eapol_sm_free(sta->sm);
 
 	if (sta->hs_sta)
-		handshake_state_free(sta->hs_sta);
+		handshake_state_unref(sta->hs_sta);
 
 	if (sta->sm_a)
 		eapol_sm_free(sta->sm_a);
 
 	if (sta->hs_auth)
-		handshake_state_free(sta->hs_auth);
+		handshake_state_unref(sta->hs_auth);
 
 end:
 	l_free(sta);

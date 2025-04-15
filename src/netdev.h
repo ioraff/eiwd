@@ -158,6 +158,7 @@ const char *netdev_get_name(struct netdev *netdev);
 bool netdev_get_is_up(struct netdev *netdev);
 const char *netdev_get_path(struct netdev *netdev);
 uint8_t netdev_get_rssi_level_idx(struct netdev *netdev);
+int netdev_get_low_signal_threshold(uint32_t frequency);
 
 struct handshake_state *netdev_handshake_state_new(struct netdev *netdev);
 struct handshake_state *netdev_get_handshake(struct netdev *netdev);

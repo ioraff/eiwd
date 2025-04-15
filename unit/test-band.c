@@ -683,6 +683,26 @@ static void test_conversion_fallback(const void *data)
 	assert(band == BAND_FREQ_5_GHZ);
 }
 
+static void test_unsupported_freqs(const void *data)
+{
+	/*
+	 * These are frequencies that were seen advertised by some drivers
+	 * but that don't match any global operating classes IWD has. They may
+	 * be valid, but IWD should not parse them correctly without added
+	 * support in band.c.
+	 */
+	uint32_t unsupported[] = {
+		5920, 5940, 5960, 5980, 6000, 6020, 6040, 6060, 6080,
+	};
+	unsigned int i;
+
+	for (i = 0; i < L_ARRAY_SIZE(unsupported); i++) {
+		uint8_t channel = band_freq_to_channel(unsupported[i], NULL);
+
+		assert(!channel);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
@@ -750,6 +770,7 @@ int main(int argc, char *argv[])
 
 	l_test_add("/band/conversions", test_conversions, NULL);
 	l_test_add("/band/conversion fallback", test_conversion_fallback, NULL);
+	l_test_add("/band/unsupported freqs", test_unsupported_freqs, NULL);
 
 	return l_test_run();
 }

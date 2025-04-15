@@ -82,7 +82,7 @@ bool mschap_challenge_response(const uint8_t *challenge,
 
 /**
  * Hash the utf8 encoded nt password.
- * It is asumed, that the password is valid utf8!
+ * It is assumed, that the password is valid utf8!
  * The rfc says "unicode-char", but never specifies which encoding.
  * This function converts the password to ucs-2.
  * The example in the code uses LE for the unicode chars, so it is forced here.

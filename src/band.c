@@ -896,7 +896,7 @@ static const struct operating_class_info e4_operating_classes[] = {
 	},
 	{
 		.operating_class = 136,
-		.starting_frequency = 5950,
+		.starting_frequency = 5925,
 		.channel_spacing = 20,
 		.center_frequencies = { 2 },
 	}
@@ -1352,6 +1352,10 @@ check_e4:
 		const struct operating_class_info *info =
 						&e4_operating_classes[i];
 
+		if (band != band_oper_class_to_band(NULL,
+							info->operating_class))
+			continue;
+
 		if (e4_has_frequency(info, freq) == 0 ||
 					e4_has_ccfi(info, freq) == 0) {
 			if (out_band)
@@ -1426,7 +1430,7 @@ static const char *const oper_class_eu_codes[] = {
 	"AL", "AM", "AT", "AZ", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE",
 	"DK", "EE", "EL", "ES", "FI", "FR", "GE", "HR", "HU", "IE", "IS", "IT",
 	"LI", "LT", "LU", "LV", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT",
-	"RO", "RS", "RU", "SE", "SI", "SK", "TR", "UA", "UK"
+	"RO", "RS", "RU", "SE", "SI", "SK", "TR", "UA", "UK", "GB"
 };
 
 /* Annex E, table E-1 */

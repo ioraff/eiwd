@@ -622,7 +622,7 @@ bool netconfig_get_fils_ip_req(struct netconfig *netconfig,
 				struct ie_fils_ip_addr_request_info *info)
 {
 	/*
-	 * Fill in the fields used for building the FILS IP Address Assigment
+	 * Fill in the fields used for building the FILS IP Address Assignment
 	 * IE during connection if we're configured to do automatic network
 	 * configuration (usually DHCP).  If we're configured with static
 	 * values return false to mean the IE should not be sent.
@@ -710,7 +710,7 @@ struct netconfig *netconfig_new(uint32_t ifindex)
 	netconfig_commit_init(netconfig);
 
 	debug_level = getenv("IWD_DHCP_DEBUG");
-	if (debug_level != NULL) {
+	if (debug_level) {
 		if (!strcmp("debug", debug_level))
 			dhcp_priority = L_LOG_DEBUG;
 		else if (!strcmp("info", debug_level))

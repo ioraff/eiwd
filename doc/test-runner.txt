@@ -218,7 +218,7 @@ supplicant running IWD:
 #~~~~~~~~~~~~~~~~~~~~~~~~~ hw.conf ~~~~~~~~~~~~~~~~~~~~~~~~~
 # Lines starting with # are ignored
 
-# 'SETUP' is a manditory configuration group.
+# 'SETUP' is a mandatory configuration group.
 [SETUP]
 #
 # Total number of radios requested per network setup. This includes

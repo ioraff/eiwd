@@ -237,7 +237,7 @@ class Wpas:
                         ('' if go_intent is None else ' go_intent=' + str(go_intent)))
         self.wait_for_event('OK')
 
-    # Pre-accept the next GO Negotiation Request from this peer to avoid the extra Respone + Request frames
+    # Pre-accept the next GO Negotiation Request from this peer to avoid the extra Response + Request frames
     def p2p_authorize(self, peer, pin=None, go_intent=None):
         self._rx_data = []
         self._ctrl_request('P2P_CONNECT ' + peer['p2p_dev_addr'] + ' ' + ('pbc' if pin is None else pin) +

@@ -63,6 +63,7 @@
 #include "src/eap.h"
 #include "src/eap-tls-common.h"
 #include "src/storage.h"
+#include "src/pmksa.h"
 
 #define STATION_RECENT_NETWORK_LIMIT	5
 #define STATION_RECENT_FREQS_LIMIT	5
@@ -74,6 +75,11 @@ static uint32_t roam_retry_interval;
 static bool anqp_disabled;
 static bool supports_arp_evict_nocarrier;
 static bool supports_ndisc_evict_nocarrier;
+static bool supports_drop_gratuitous_arp;
+static bool supports_drop_unsolicited_na;
+static bool supports_ipv4_drop_unicast_in_l2_multicast;
+static bool supports_ipv6_drop_unicast_in_l2_multicast;
+static bool pmksa_disabled;
 static struct watchlist event_watches;
 static uint32_t known_networks_watch;
 static uint32_t allowed_bands;
@@ -131,6 +137,8 @@ struct station {
 	unsigned int affinity_watch;
 	char *affinity_client;
 
+	struct handshake_state *hs;
+
 	bool preparing_roam : 1;
 	bool roam_scan_full : 1;
 	bool signal_low : 1;
@@ -148,19 +156,68 @@ struct anqp_entry {
 };
 
 /*
+ * Rather than sorting BSS's purely based on ranking a higher level grouping
+ * is used. The purpose of this higher order grouping is the consider the BSS's
+ * roam blacklist status. The roam blacklist is a "soft" blacklist in that we
+ * still should connect to these BSS's if they are the only "good" option.
+ * The question here is: what makes a BSS "good" vs "bad".
+ *
+ * For an initial (probably naive) approach here we can use the
+ * RoamThreshold[5G] which indicates the signal level that would not
+ * be of an acceptable connection quality. BSS can then be sorted either
+ * above or below this threshold. Within each of these groups a BSS may be
+ * blacklisted, meaning it should get sorted lower on the list compared to
+ * others within the same group.
+ *
+ * This sorting is achieved by extending rank to a uint32_t where the first 16
+ * bits are the standard rank calculated by scan.c. Above that bits can be
+ * reserved for this higher level grouping:
+ *
+ * Bit 16 indicates the BSS is not blacklisted
+ * Bit 17 indicates the BSS is above the critical signal threshold
+ */
+
+#define ABOVE_THRESHOLD_BIT 17
+#define NOT_BLACKLISTED_BIT 16
+
+static uint32_t evaluate_bss_group_rank(const uint8_t *addr, uint32_t freq,
+					int16_t signal_strength, uint16_t rank)
+{
+	int signal = signal_strength / 100;
+	bool roam_blacklist;
+	bool good_signal;
+	uint32_t rank_out = (uint32_t) rank;
+
+	if (blacklist_contains_bss(addr, BLACKLIST_REASON_CONNECT_FAILED))
+		return 0;
+
+	roam_blacklist = blacklist_contains_bss(addr,
+					BLACKLIST_REASON_ROAM_REQUESTED);
+	good_signal = signal >= netdev_get_low_signal_threshold(freq);
+
+	if (good_signal)
+		set_bit(&rank_out, ABOVE_THRESHOLD_BIT);
+
+	if (!roam_blacklist)
+		set_bit(&rank_out, NOT_BLACKLISTED_BIT);
+
+	return rank_out;
+}
+
+/*
  * Used as entries for the roam list since holding scan_bss pointers directly
  * from station->bss_list is not 100% safe due to the possibility of the
  * hardware scanning and overwriting station->bss_list.
  */
 struct roam_bss {
 	uint8_t addr[6];
-	uint16_t rank;
+	uint32_t rank;
 	int32_t signal_strength;
 	bool ft_failed: 1;
 };
 
 static struct roam_bss *roam_bss_from_scan_bss(const struct scan_bss *bss,
-						uint16_t rank)
+						uint32_t rank)
 {
 	struct roam_bss *rbss = l_new(struct roam_bss, 1);
 
@@ -423,7 +480,8 @@ static void station_print_scan_bss(const struct scan_bss *bss)
 		ptr += sprintf(ptr, ", snr: %d", bss->snr);
 
 	if (bss->have_utilization)
-		ptr += sprintf(ptr, ", load: %u/255", bss->utilization);
+		ptr += sprintf(ptr, ", load: %u/255, clients: %u",
+				bss->utilization, bss->sta_count);
 
 	l_debug("Processing BSS '%s' with SSID: %s, freq: %u, rank: %u, "
 			"strength: %i, data_rate: %u.%u%s",
@@ -1152,6 +1210,7 @@ static int station_build_handshake_rsn(struct handshake_state *hs,
 					struct network *network,
 					struct scan_bss *bss)
 {
+	struct netdev *netdev = netdev_find(hs->ifindex);
 	const struct l_settings *settings = iwd_get_config();
 	enum security security = network_get_security(network);
 	bool add_mde = false;
@@ -1162,6 +1221,7 @@ static int station_build_handshake_rsn(struct handshake_state *hs,
 	uint8_t *ap_ie;
 	bool disable_ocv;
 	enum band_freq band;
+	struct pmksa *pmksa;
 
 	memset(&info, 0, sizeof(info));
 
@@ -1295,6 +1355,17 @@ build_ie:
 			IE_CIPHER_IS_GCMP_CCMP(info.pairwise_ciphers))
 		info.extended_key_id = true;
 
+	if (IE_AKM_IS_SAE(info.akm_suites) && !pmksa_disabled) {
+		pmksa = pmksa_cache_get(netdev_get_address(netdev), bss->addr,
+					bss->ssid, bss->ssid_len,
+					info.akm_suites);
+		if (pmksa) {
+			handshake_state_set_pmksa(hs, pmksa);
+			info.num_pmkids = 1;
+			info.pmkids = hs->pmksa->pmkid;
+		}
+	}
+
 	/* RSN takes priority */
 	if (bss->rsne) {
 		ap_ie = bss->rsne;
@@ -1379,7 +1450,7 @@ static struct handshake_state *station_handshake_setup(struct station *station,
 	handshake_state_set_vendor_ies(hs, vendor_ies, iov_elems);
 
 	/*
-	 * It can't hurt to try the FILS IP Address Assigment independent of
+	 * It can't hurt to try the FILS IP Address Assignment independent of
 	 * which auth-proto is actually used.
 	 */
 	if (station->netconfig && netconfig_get_fils_ip_req(station->netconfig,
@@ -1391,7 +1462,7 @@ static struct handshake_state *station_handshake_setup(struct station *station,
 	return hs;
 
 not_supported:
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	return NULL;
 }
 
@@ -1643,10 +1714,13 @@ static void station_set_drop_neighbor_discovery(struct station *station,
 {
 	char *v = value ? "1" : "0";
 
-	sysfs_write_ipv4_setting(netdev_get_name(station->netdev),
-				"drop_gratuitous_arp", v);
-	sysfs_write_ipv6_setting(netdev_get_name(station->netdev),
-				"drop_unsolicited_na", v);
+	if (supports_drop_gratuitous_arp)
+		sysfs_write_ipv4_setting(netdev_get_name(station->netdev),
+					"drop_gratuitous_arp", v);
+
+	if (supports_drop_unsolicited_na)
+		sysfs_write_ipv6_setting(netdev_get_name(station->netdev),
+					"drop_unsolicited_na", v);
 }
 
 static void station_set_drop_unicast_l2_multicast(struct station *station,
@@ -1654,10 +1728,13 @@ static void station_set_drop_unicast_l2_multicast(struct station *station,
 {
 	char *v = value ? "1" : "0";
 
-	sysfs_write_ipv4_setting(netdev_get_name(station->netdev),
-				"drop_unicast_in_l2_multicast", v);
-	sysfs_write_ipv6_setting(netdev_get_name(station->netdev),
-				"drop_unicast_in_l2_multicast", v);
+	if (supports_ipv4_drop_unicast_in_l2_multicast)
+		sysfs_write_ipv4_setting(netdev_get_name(station->netdev),
+					"drop_unicast_in_l2_multicast", v);
+
+	if (supports_ipv6_drop_unicast_in_l2_multicast)
+		sysfs_write_ipv6_setting(netdev_get_name(station->netdev),
+					"drop_unicast_in_l2_multicast", v);
 }
 
 static void station_signal_agent_notify(struct station *station);
@@ -1768,6 +1845,11 @@ static void station_enter_state(struct station *station,
 			l_dbus_remove_watch(dbus_get_bus(),
 						station->affinity_watch);
 			station->affinity_watch = 0;
+		}
+
+		if (station->hs) {
+			handshake_state_unref(station->hs);
+			station->hs = NULL;
 		}
 
 		break;
@@ -1921,7 +2003,7 @@ static void station_reset_connection_state(struct station *station)
 	/*
 	 * Perform this step last since calling network_disconnected() might
 	 * result in the removal of the network (for example if provisioning
-	 * a new hidden network fails with an incorrect pasword).
+	 * a new hidden network fails with an incorrect password).
 	 */
 	if (station->state == STATION_STATE_CONNECTED ||
 			station->state == STATION_STATE_CONNECTING ||
@@ -2489,9 +2571,12 @@ static void station_preauthenticate_cb(struct netdev *netdev,
 	}
 
 	if (station_transition_reassociate(station, bss, new_hs) < 0) {
-		handshake_state_free(new_hs);
+		handshake_state_unref(new_hs);
 		station_roam_failed(station);
 	}
+
+	handshake_state_unref(station->hs);
+	station->hs = handshake_state_ref(new_hs);
 }
 
 static void station_transition_start(struct station *station);
@@ -2692,9 +2777,12 @@ static bool station_try_next_transition(struct station *station,
 	}
 
 	if (station_transition_reassociate(station, bss, new_hs) < 0) {
-		handshake_state_free(new_hs);
+		handshake_state_unref(new_hs);
 		return false;
 	}
+
+	handshake_state_unref(station->hs);
+	station->hs = handshake_state_ref(new_hs);
 
 	return true;
 }
@@ -2782,7 +2870,7 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 	struct handshake_state *hs = netdev_get_handshake(station->netdev);
 	struct scan_bss *current_bss = station->connected_bss;
 	struct scan_bss *bss;
-	double cur_bss_rank = 0.0;
+	uint32_t cur_bss_group_rank = 0;
 	static const double RANK_FT_FACTOR = 1.3;
 	uint16_t mdid;
 	enum security orig_security, security;
@@ -2811,10 +2899,15 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 	 */
 	bss = l_queue_find(bss_list, bss_match_bssid, current_bss->addr);
 	if (bss && !station->ap_directed_roaming) {
-		cur_bss_rank = bss->rank;
+		double cur_bss_rank = bss->rank;
 
 		if (hs->mde && bss->mde_present && l_get_le16(bss->mde) == mdid)
 			cur_bss_rank *= RANK_FT_FACTOR;
+
+		cur_bss_group_rank = evaluate_bss_group_rank(bss->addr,
+						bss->frequency,
+						bss->signal_strength,
+						(uint16_t) cur_bss_rank);
 	}
 
 	/*
@@ -2836,6 +2929,7 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 	while ((bss = l_queue_pop_head(bss_list))) {
 		double rank;
 		struct roam_bss *rbss;
+		uint32_t group_rank;
 
 		station_print_scan_bss(bss);
 
@@ -2857,7 +2951,8 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 		if (network_can_connect_bss(network, bss) < 0)
 			goto next;
 
-		if (blacklist_contains_bss(bss->addr))
+		if (blacklist_contains_bss(bss->addr,
+					BLACKLIST_REASON_CONNECT_FAILED))
 			goto next;
 
 		rank = bss->rank;
@@ -2865,7 +2960,11 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 		if (hs->mde && bss->mde_present && l_get_le16(bss->mde) == mdid)
 			rank *= RANK_FT_FACTOR;
 
-		if (rank <= cur_bss_rank)
+		group_rank = evaluate_bss_group_rank(bss->addr, bss->frequency,
+						bss->signal_strength,
+						(uint16_t) rank);
+
+		if (group_rank <= cur_bss_group_rank)
 			goto next;
 
 		/*
@@ -2874,7 +2973,7 @@ static bool station_roam_scan_notify(int err, struct l_queue *bss_list,
 		 */
 		station_update_roam_bss(station, bss);
 
-		rbss = roam_bss_from_scan_bss(bss, rank);
+		rbss = roam_bss_from_scan_bss(bss, group_rank);
 
 		l_queue_insert(station->roam_bss_list, rbss,
 				roam_bss_rank_compare, NULL);
@@ -3101,7 +3200,7 @@ static void station_roam_timeout_rearm(struct station *station, int seconds)
 	if (!station->roam_trigger_timeout)
 		goto new_timeout;
 
-	/* If we cant get the remaining time just create a new timer */
+	/* If we can't get the remaining time just create a new timer */
 	if (L_WARN_ON(!l_timeout_remaining(station->roam_trigger_timeout,
 						&remaining))) {
 		l_timeout_remove(station->roam_trigger_timeout);
@@ -3142,11 +3241,9 @@ static void station_ap_directed_roam(struct station *station,
 	uint8_t req_mode;
 	uint16_t dtimer;
 	uint8_t valid_interval;
+	bool can_roam = !station_cannot_roam(station);
 
 	l_debug("ifindex: %u", netdev_get_ifindex(station->netdev));
-
-	if (station_cannot_roam(station))
-		return;
 
 	if (station->state != STATION_STATE_CONNECTED) {
 		l_debug("roam: unexpected AP directed roam -- ignore");
@@ -3211,8 +3308,13 @@ static void station_ap_directed_roam(struct station *station,
 	 * disassociating us. If either of these bits are set, set the
 	 * ap_directed_roaming flag. Otherwise still try roaming but don't
 	 * treat it any different than a normal roam.
+	 *
+	 * The only exception here is if we are in the middle of roaming
+	 * (can_roam == false) since we cannot reliably know if the roam scan
+	 * included frequencies from potential candidates in this request,
+	 * forcing a roam in this case might result in unintended behavior.
 	 */
-	if (req_mode & (WNM_REQUEST_MODE_DISASSOCIATION_IMMINENT |
+	if (can_roam && req_mode & (WNM_REQUEST_MODE_DISASSOCIATION_IMMINENT |
 			WNM_REQUEST_MODE_TERMINATION_IMMINENT |
 			WNM_REQUEST_MODE_ESS_DISASSOCIATION_IMMINENT))
 		station->ap_directed_roaming = true;
@@ -3238,6 +3340,19 @@ static void station_ap_directed_roam(struct station *station,
 
 		pos += url_len;
 	}
+
+	blacklist_add_bss(station->connected_bss->addr,
+				BLACKLIST_REASON_ROAM_REQUESTED);
+	station_debug_event(station, "ap-roam-blacklist-added");
+
+	/*
+	 * Validating the frame and blacklisting should still be done even if
+	 * we are mid-roam. Its important to track the BSS requesting the
+	 * transition so when the current roam completes IWD will be less likely
+	 * to roam back to the current BSS.
+	 */
+	if (!can_roam)
+		return;
 
 	station->preparing_roam = true;
 
@@ -3377,10 +3492,51 @@ static bool station_retry_with_reason(struct station *station,
 		break;
 	}
 
-	blacklist_add_bss(station->connected_bss->addr);
+	blacklist_add_bss(station->connected_bss->addr,
+				BLACKLIST_REASON_CONNECT_FAILED);
+
+	/*
+	 * Network blacklist the BSS as well, since the timeout blacklist could
+	 * be disabled
+	 */
+	network_blacklist_add(station->connected_network,
+				station->connected_bss);
 
 try_next:
 	return station_try_next_bss(station);
+}
+
+static bool station_pmksa_fallback(struct station *station, uint16_t status)
+{
+	/*
+	 * IEEE 802.11-2020 12.6.10.3 Cached PMKSAs and RSNA key management
+	 *
+	 * "If the Authenticator does not have a PMKSA for the PMKIDs in the
+	 * (re)association request or the AKM does not match, its behavior
+	 * depends on how the PMKSA was established. If SAE authentication was
+	 * used to establish the PMKSA, then the AP shall reject (re)association
+	 * by sending a (Re)Association Response frame with status code
+	 * STATUS_INVALID_PMKID. Note that this allows the non-AP STA to fall
+	 * back to full SAE authentication to establish another PMKSA"
+	 */
+	if (status != MMPDU_STATUS_CODE_INVALID_PMKID)
+		return false;
+
+	if (L_WARN_ON(!station->hs))
+		return false;
+
+	if (!IE_AKM_IS_SAE(station->hs->akm_suite) || !station->hs->have_pmksa)
+		return false;
+
+	/*
+	 * Remove the PMKSA from the handshake and return true to re-try the
+	 * same BSS without PMKSA.
+	 */
+	handshake_state_remove_pmksa(station->hs);
+
+	station_debug_event(station, "pmksa-invalid-pmkid");
+
+	return true;
 }
 
 /* A bit more concise for trying to fit these into 80 characters */
@@ -3393,6 +3549,10 @@ try_next:
 static bool station_retry_with_status(struct station *station,
 					uint16_t status_code)
 {
+	/* If PMKSA failed don't blacklist so we can retry this BSS */
+	if (station_pmksa_fallback(station, status_code))
+		goto try_next;
+
 	/*
 	 * Certain Auth/Assoc failures should not cause a timeout blacklist.
 	 * In these cases we want to only temporarily blacklist the BSS until
@@ -3403,12 +3563,19 @@ static bool station_retry_with_status(struct station *station,
 	 *       specific BSS on our next attempt. There is currently no way to
 	 *       obtain that IE, but this should be done in the future.
 	 */
-	if (IS_TEMPORARY_STATUS(status_code))
-		network_blacklist_add(station->connected_network,
-						station->connected_bss);
-	else
-		blacklist_add_bss(station->connected_bss->addr);
+	if (!IS_TEMPORARY_STATUS(status_code))
+		blacklist_add_bss(station->connected_bss->addr,
+					BLACKLIST_REASON_CONNECT_FAILED);
 
+	/*
+	 * Unconditionally network blacklist the BSS if we are retrying. This
+	 * will allow network_bss_select to traverse the BSS list and ignore
+	 * BSS's which have previously failed
+	 */
+	network_blacklist_add(station->connected_network,
+				station->connected_bss);
+
+try_next:
 	iwd_notice(IWD_NOTICE_CONNECT_FAILED, "status: %u", status_code);
 
 	return station_try_next_bss(station);
@@ -3493,7 +3660,8 @@ static void station_connect_cb(struct netdev *netdev, enum netdev_result result,
 
 	switch (result) {
 	case NETDEV_RESULT_OK:
-		blacklist_remove_bss(station->connected_bss->addr);
+		blacklist_remove_bss(station->connected_bss->addr,
+					BLACKLIST_REASON_CONNECT_FAILED);
 		station_connect_ok(station);
 		return;
 	case NETDEV_RESULT_DISCONNECTED:
@@ -3726,6 +3894,15 @@ int __station_connect_network(struct station *station, struct network *network,
 	struct handshake_state *hs;
 	int r;
 
+	/*
+	 * If we already have a handshake_state ref this is due to a retry,
+	 * unref that now
+	 */
+	if (station->hs) {
+		handshake_state_unref(station->hs);
+		station->hs = NULL;
+	}
+
 	if (station->netconfig && !netconfig_load_settings(
 					station->netconfig,
 					network_get_settings(network)))
@@ -3739,7 +3916,7 @@ int __station_connect_network(struct station *station, struct network *network,
 				station_netdev_event,
 				station_connect_cb, station);
 	if (r < 0) {
-		handshake_state_free(hs);
+		handshake_state_unref(hs);
 		return r;
 	}
 
@@ -3752,6 +3929,7 @@ int __station_connect_network(struct station *station, struct network *network,
 
 	station->connected_bss = bss;
 	station->connected_network = network;
+	station->hs = handshake_state_ref(hs);
 
 	if (station->state != state)
 		station_enter_state(station, state);
@@ -5064,6 +5242,11 @@ static void station_free(struct station *station)
 		l_queue_destroy(station->owe_hidden_scan_ids, NULL);
 	}
 
+	if (station->hs) {
+		handshake_state_unref(station->hs);
+		station->hs = NULL;
+	}
+
 	station_roam_state_clear(station);
 
 	l_queue_destroy(station->networks_sorted, NULL);
@@ -5719,7 +5902,7 @@ static void add_frame_watches(struct netdev *netdev)
 	 */
 	frame_watch_add(netdev_get_wdev_id(netdev), 0, 0x00d0,
 			action_ap_roam_prefix, sizeof(action_ap_roam_prefix),
-			ap_roam_frame_event,
+			false, ap_roam_frame_event,
 			L_UINT_TO_PTR(netdev_get_ifindex(netdev)), NULL);
 }
 
@@ -5831,6 +6014,10 @@ static int station_init(void)
 				&anqp_disabled))
 		anqp_disabled = true;
 
+	if (!l_settings_get_bool(iwd_get_config(), "General", "DisablePMKSA",
+				&pmksa_disabled))
+		pmksa_disabled = false;
+
 	if (!netconfig_enabled())
 		l_info("station: Network configuration is disabled.");
 
@@ -5838,6 +6025,16 @@ static int station_init(void)
 						"arp_evict_nocarrier");
 	supports_ndisc_evict_nocarrier = sysfs_supports_ipv6_setting("all",
 						"ndisc_evict_nocarrier");
+	supports_drop_gratuitous_arp = sysfs_supports_ipv4_setting("all",
+						"drop_gratuitous_arp");
+	supports_drop_unsolicited_na = sysfs_supports_ipv6_setting("all",
+						"drop_unsolicited_na");
+	supports_ipv4_drop_unicast_in_l2_multicast =
+					sysfs_supports_ipv4_setting("all",
+					"drop_unicast_in_l2_multicast");
+	supports_ipv6_drop_unicast_in_l2_multicast =
+					sysfs_supports_ipv6_setting("all",
+					"drop_unicast_in_l2_multicast");
 
 	watchlist_init(&event_watches, NULL);
 

@@ -61,6 +61,7 @@ static struct handshake_state *test_handshake_state_new(uint32_t ifindex)
 
 	ths->super.ifindex = ifindex;
 	ths->super.free = test_handshake_state_free;
+	ths->super.refcount = 1;
 
 	return &ths->super;
 }
@@ -2093,7 +2094,7 @@ static void wsc_test_pbc_handshake(const void *data)
 					eap_fail, sizeof(eap_fail), false);
 	assert(verify.eapol_failed);
 
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 	eap_exit();
 }
@@ -2216,7 +2217,7 @@ static void wsc_test_retransmission_no_fragmentation(const void *data)
 						sizeof(eap_fail), false);
 	assert(verify.eapol_failed);
 
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 	eap_exit();
 }
@@ -2335,6 +2336,7 @@ static struct handshake_state *test_ap_sta_hs_new(struct test_ap_sta_data *s,
 
 	ths->super.ifindex = ifindex;
 	ths->super.free = (void (*)(struct handshake_state *s)) l_free;
+	ths->super.refcount = 1;
 	ths->s = s;
 
 	return &ths->super;
@@ -2535,8 +2537,8 @@ static void wsc_r_test_pbc_handshake(const void *data)
 
 	test_ap_sta_run(&s);
 
-	handshake_state_free(s.ap_hs);
-	handshake_state_free(s.sta_hs);
+	handshake_state_unref(s.ap_hs);
+	handshake_state_unref(s.sta_hs);
 	__handshake_set_install_tk_func(NULL);
 	l_settings_free(ap_8021x_settings);
 	l_settings_free(sta_8021x_settings);

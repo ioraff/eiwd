@@ -393,7 +393,7 @@ static int wsc_enrollee_connect(struct wsc_enrollee *wsce, struct scan_bss *bss,
 		return 0;
 
 error:
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	return r;
 }
 

@@ -260,12 +260,69 @@ class Test(unittest.TestCase):
 
         self.wd.unregister_psk_agent(psk_agent)
 
+    def test_blacklist_disabled(self):
+        wd = self.wd
+        bss_hostapd = self.bss_hostapd
+
+        rule0 = self.rule0
+        rule1 = self.rule1
+        rule2 = self.rule2
+
+        psk_agent = PSKAgent(["secret123", 'secret123'])
+        wd.register_psk_agent(psk_agent)
+
+        devices = wd.list_devices(1)
+        device = devices[0]
+
+        rule0.drop = True
+        rule0.enabled = True
+
+        device.autoconnect = True
+
+        condition = 'obj.state == DeviceState.connected'
+        wd.wait_for_object_condition(device, condition)
+
+        ordered_network = device.get_ordered_network("TestBlacklist", full_scan=True)
+
+        self.assertEqual(ordered_network.type, NetworkType.psk)
+
+        # The first BSS should fail, and we should connect to the second. This
+        # should not result in a connection blacklist though since its disabled.
+        bss_hostapd[1].wait_for_event('AP-STA-CONNECTED %s' % device.address)
+
+        device.disconnect()
+
+        rule0.drop = False
+        device.autoconnect = True
+
+        # Verify the first BSS wasn't blacklisted.
+        bss_hostapd[0].wait_for_event('AP-STA-CONNECTED %s' % device.address)
+
     def setUp(self):
+        _, _, name = self.id().split(".")
+
+        # TODO: If we have this pattern elsewhere it might be nice to turn this
+        # into a decorator e.g.
+        #
+        # @config("main.conf.disabled")
+        # @profile("TestBlacklist.psk")
+        # def test_blacklist_disabled(self)
+        #    ...
+        #
+        if name == "test_blacklist_disabled":
+            IWD.copy_to_storage("main.conf.disabled", IWD_CONFIG_DIR, "main.conf")
+            IWD.copy_to_storage("TestBlacklist.psk")
+        else:
+            IWD.copy_to_storage("main.conf.default", IWD_CONFIG_DIR, "main.conf")
+
         self.wd = IWD(True)
 
     def tearDown(self):
         IWD.clear_storage()
         self.wd = None
+        self.rule0.drop = False
+        self.rule1.drop = False
+        self.rule2.drop = False
 
     @classmethod
     def setUpClass(cls):

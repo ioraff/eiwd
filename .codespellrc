@@ -1,0 +1,3 @@
+[codespell]
+ignore-words-list = fils, FILS, SME, assertIn, OCE, clen, aci, ELL, sav, ths
+skip = build-aux, linux, autom4te.cache, aclocal.m4, AUTHORS, libtool, configure*, *.5, ell

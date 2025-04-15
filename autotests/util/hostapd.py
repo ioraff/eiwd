@@ -368,3 +368,7 @@ class HostapdCLI(object):
             others = [h for h in args if h != hapd]
 
             hapd._add_neighbors(*others)
+
+    def pmksa_flush(self):
+        cmd = self.cmdline + ['pmksa_flush']
+        ctx.start_process(cmd).wait()

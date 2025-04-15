@@ -119,7 +119,7 @@ class VirtualRadio(Radio):
 	'''
 		A subclass of 'Radio' specific to mac80211_hwsim radios.
 
-		TODO: Using D-Bus to create and destroy radios is more desireable
+		TODO: Using D-Bus to create and destroy radios is more desirable
 		than the command line.
 	'''
 
@@ -400,7 +400,7 @@ class TestContext(Namespace):
 			# just given to hostapd/IWD as they appear during
 			# discovery.
 			#
-			# TODO: It may be desireable to map PCI/USB adapters to
+			# TODO: It may be desirable to map PCI/USB adapters to
 			#       specific radX radios specified in the config but
 			#       there are really 2 separate use cases here.
 			#       1. You want to test a *specific* radio with IWD
@@ -482,7 +482,7 @@ class TestContext(Namespace):
 	def start_ofono(self):
 		sim_keys = self.hw_config['SETUP'].get('sim_keys', None)
 		if not sim_keys:
-			print("Ofono not requred")
+			print("Ofono not required")
 			return
 		elif sim_keys != 'ofono':
 			os.environ['IWD_SIM_KEYS'] = sim_keys
@@ -701,7 +701,7 @@ def start_test(ctx, subtests, rqueue):
 		# test results are queued and printed at the very end so its
 		# difficult to know *where* a test failed (python gives a stack
 		# trace but printing the exception/failure immediately shows
-		# where in the debug logs something failed). Moreso if there are
+		# where in the debug logs something failed). More so if there are
 		# several test functions inside a single python file they run
 		# as a single test and it is difficult (again) to know where
 		# something failed.
@@ -731,7 +731,7 @@ def start_test(ctx, subtests, rqueue):
 				func, file = str(t).split(' ')
 				#
 				# TODO: There may be a better way of doing this
-				# but strigifying the test class gives us a string:
+				# but stringifying the test class gives us a string:
 				# <function> (<file>.<class>)
 				#
 				file = file.strip('()').split('.')[0] + '.py'
@@ -981,7 +981,7 @@ def run_auto_tests(ctx, args):
 			p = multiprocessing.Process(target=start_test, args=(ctx, subtests, rqueue))
 			p.start()
 			# Rather than time each subtest we just time the total but
-			# mutiply the default time by the number of tests being run.
+			# multiply the default time by the number of tests being run.
 			p.join(int(args.timeout) * len(subtests))
 
 			if p.is_alive():

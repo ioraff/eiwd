@@ -75,7 +75,7 @@ static bool secret_from_file(const char *file)
 
 	fd = open(file, O_RDONLY, 0);
 	if (fd < 0) {
-		printf("Cant open %s (%d)\n", file, fd);
+		printf("Can't open %s (%d)\n", file, fd);
 		return false;
 	}
 

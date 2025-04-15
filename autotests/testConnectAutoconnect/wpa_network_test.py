@@ -11,7 +11,7 @@ from iwd import IWD
 
 class TestWpaNetwork(unittest.TestCase):
     '''
-    The bellow test cases exercise the following connection scenarios:
+    The below test cases exercise the following connection scenarios:
 
     Network config is
     present at start time:  Connect:  AutoConnect:  Result:

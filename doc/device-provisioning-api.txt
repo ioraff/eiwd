@@ -135,7 +135,7 @@ Object path	/net/connman/iwd/{phy0,phy1,...}/{1,2,...}
 		void StartConfigurator(object agent_path)
 
 			Start a shared code configurator using an agent
-			(distingushed by 'agent_path') to obtain the shared
+			(distinguished by 'agent_path') to obtain the shared
 			code. This method is meant for an automated use case
 			where a configurator is capable of configuring multiple
 			enrollees, and distinguishing between them by their
@@ -196,7 +196,7 @@ Methods		void Release() [noreply]
 		string RequestSharedCode(string identifier)
 
 			This method gets called when a shared code is requested
-			for a particular enrollee, distingushed by the
+			for a particular enrollee, distinguished by the
 			identifier. The shared code agent should lookup the
 			identifier and return the shared code, or return an
 			error if not found.

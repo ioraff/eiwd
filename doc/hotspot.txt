@@ -5,7 +5,7 @@ credentials for your e.g. cable/cellular provider, or via a dedicated account
 like Boingo. Lots of these services also allow you to roam between networks.
 
 The underlying authentication is standard WPA2-Enterprise but Hotspot 2.0 adds a
-'discovery' stage to identifiying networks. This discovery is done using ANQP,
+'discovery' stage to identifying networks. This discovery is done using ANQP,
 which queries the network for additional information to determine if the client
 has the credentials to connect.
 

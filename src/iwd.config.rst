@@ -225,6 +225,11 @@ The group ``[General]`` contains general settings.
        request is just a 'hint' and ultimately left up to the kernel to set the
        country.
 
+   * - DisablePMKSA
+     - Value: **false**, true
+
+       Disable PMKSA support in IWD
+
 Network
 -------
 
@@ -285,9 +290,17 @@ control how long a misbehaved BSS spends on the blacklist.
    * - InitialTimeout
      - Values: uint64 value in seconds (default: **60**)
 
-       The initial time that a BSS spends on the blacklist.
+       The initial time that a BSS spends on the blacklist. Setting this to zero
+       will disable blacklisting functionality in IWD.
+   * - InitialRoamRequestedTimeout
+     - Values: uint64 value in seconds (default: **30**)
+
+       The initial time that a BSS will be marked after a BSS requests a roam.
+       This is to aid in avoiding roaming back to BSS's which are likely
+       overloaded. Setting this to zero will disabled this form of blacklisting.
    * - Multiplier
-     - Values: unsigned int value in seconds (default: **30**)
+     - Values: unsigned int value greater than zero, in seconds
+       (default: **30**)
 
        If the BSS was blacklisted previously and another connection attempt
        has failed after the initial timeout has expired, then the BSS blacklist
@@ -340,6 +353,28 @@ autoconnect purposes.
 
        A value of 0.0 will disable the 6GHz band and prevent scanning or
        connecting on those frequencies.
+
+   * - HighUtilizationThreshold
+     - Values: unsigned integer value 0 - 255 (default: **0**, disabled)
+
+       **Warning: This is an experimental feature**
+
+       The BSS utilization threshold at which a negative rank factor begins to
+       be applied to the BSS. As the load increases for a BSS the ranking factor
+       decays exponentially, meaning the ranking factor will decrease
+       exponentially. Setting this can have very drastic effects on the BSS rank
+       if its utilization is high, use with care.
+
+   * - HighStationCountThreshold
+     - Values: unsigned integer value 0 - 255 (default: **0**, disabled)
+
+       **Warning: This is an experimental feature**
+
+       The BSS station count threshold at which a negative rank factor begins to
+       be applied to the BSS. As the station count increases for a BSS the
+       ranking factor decays exponentially, meaning the ranking factor will
+       decrease exponentially. Setting this can have very drastic effects on the
+       BSS rank if its station count is high, use with care.
 
 Scan
 ----
@@ -431,6 +466,20 @@ are buggy or just don't behave similar enough to the majority of other drivers.
      - Values: comma-separated list of drivers or glob matches
 
        If a driver in user matches one in this list power save will be disabled.
+
+   * - MulticastRxDisable
+     - Values: comma-separated list of drivers or glob matches
+
+       If a driver in use matches one in this list, multicast RX will be
+       disabled.
+
+   * - SaeDisable
+     - Values: comma-separated list of drivers or glob matches
+
+       If a driver in use matches one in this list, SAE/WPA3 will be disabled
+       for connections. This will prevent connections to WPA3-only networks, but
+       will allow for connections to WPA3/WPA2 hybrid networks by utilizing
+       WPA2.
 
 SEE ALSO
 ========

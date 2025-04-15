@@ -398,8 +398,15 @@ static bool validate_mgmt_ies(const uint8_t *ies, size_t ies_len,
 
 			memcpy(&clone, &iter, sizeof(clone));
 
+			/*
+			 * Some APs send completely identical duplicate IEs:
+			 * Since these are harmless (and ignored by us) we're
+			 * going to allow them here for interoperability.
+			 */
 			while (ie_tlv_iter_next(&clone)) {
 				if (ie_tlv_iter_get_tag(&clone) != tag)
+					continue;
+				else if (ie_tlv_iter_data_eq(&iter, &clone))
 					continue;
 
 				return false;

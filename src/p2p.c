@@ -1501,7 +1501,7 @@ static void p2p_handshake_event(struct handshake_state *hs,
 static void p2p_try_connect_group(struct p2p_device *dev)
 {
 	struct scan_bss *bss = dev->conn_wsc_bss;
-	_auto_(handshake_state_free) struct handshake_state *hs = NULL;
+	_auto_(handshake_state_unref) struct handshake_state *hs = NULL;
 	struct iovec ie_iov[16];
 	int ie_num = 0;
 	int r;
@@ -2221,7 +2221,7 @@ static bool p2p_go_negotiation_confirm_cb(const struct mmpdu_header *mpdu,
 
 		/*
 		 * Start setting the group up right away and we'll add the
-		 * client's Configuation Timeout to the WSC start timeout's
+		 * client's Configuration Timeout to the WSC start timeout's
 		 * value.
 		 */
 		p2p_device_interface_create(dev);
@@ -2553,7 +2553,7 @@ static void p2p_go_negotiation_confirm_done(int error, void *user_data)
 
 	/*
 	 * Frame was ACKed.  On the GO start setting the group up right
-	 * away and we'll add the client's Configuation Timeout to the
+	 * away and we'll add the client's Configuration Timeout to the
 	 * WSC start timeout's value.  On the client wait idly the
 	 * maximum amount of time indicated by the peer in the GO
 	 * Negotiation Response's Configuration Timeout attribute and
@@ -2955,7 +2955,7 @@ static bool p2p_provision_disc_resp_cb(const struct mmpdu_header *mpdu,
 	}
 
 	/*
-	 * Indended P2P Interface address is optional, we don't have the
+	 * Intended P2P Interface address is optional, we don't have the
 	 * BSSID of the group here.
 	 *
 	 * We might want to make sure that Group Formation is false but the
@@ -4167,10 +4167,11 @@ static void p2p_device_discovery_start(struct p2p_device *dev)
 						L_ARRAY_SIZE(channels_social)];
 
 	frame_watch_add(dev->wdev_id, FRAME_GROUP_P2P_LISTEN, 0x0040,
-			(uint8_t *) "", 0, p2p_device_probe_cb, dev, NULL);
+			(uint8_t *) "", 0, false,
+			p2p_device_probe_cb, dev, NULL);
 	frame_watch_add(dev->wdev_id, FRAME_GROUP_P2P_LISTEN, 0x00d0,
 			p2p_frame_go_neg_req.data, p2p_frame_go_neg_req.len,
-			p2p_device_go_negotiation_req_cb, dev, NULL);
+			false, p2p_device_go_negotiation_req_cb, dev, NULL);
 
 	p2p_device_scan_start(dev);
 }

@@ -535,7 +535,7 @@ int __storage_decrypt(struct l_settings *settings, const char *ssid,
 
 	/*
 	 * Load decrypted data into existing settings. This is not how the API
-	 * is indended to be used (since this could result in duplicate groups)
+	 * is intended to be used (since this could result in duplicate groups)
 	 * but since the Security group was just removed and EncryptedSecurity
 	 * should only contain a Security group its safe to use it this way.
 	 */
@@ -596,7 +596,7 @@ struct l_settings *storage_network_open(enum security type, const char *ssid)
 	struct l_settings *settings;
 	_auto_(l_free) char *path = NULL;
 
-	if (ssid == NULL)
+	if (!ssid)
 		return NULL;
 
 	path = storage_get_network_file_path(type, ssid);
@@ -623,7 +623,7 @@ int storage_network_touch(enum security type, const char *ssid)
 	char *path;
 	int ret;
 
-	if (ssid == NULL)
+	if (!ssid)
 		return -EINVAL;
 
 	path = storage_get_network_file_path(type, ssid);

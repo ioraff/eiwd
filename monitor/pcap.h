@@ -36,6 +36,7 @@ void pcap_close(struct pcap *pcap);
 
 uint32_t pcap_get_type(struct pcap *pcap);
 uint32_t pcap_get_snaplen(struct pcap *pcap);
+size_t pcap_get_size(struct pcap *pcap);
 
 bool pcap_read(struct pcap *pcap, struct timeval *tv,
 		void *data, uint32_t size, uint32_t *len, uint32_t *real_len);

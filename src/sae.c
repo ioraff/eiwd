@@ -258,7 +258,7 @@ static struct l_ecc_scalar *sae_pwd_value(const struct l_ecc_curve *curve,
 	is_in_range = util_secure_fill_with_msb(is_in_range);
 
 	/*
-	 * libell has public Legendre symbol only for l_ecc_scalar, but they
+	 * ELL has public Legendre symbol only for l_ecc_scalar, but they
 	 * cannot be created if the coordinate is greater than the p. Hence,
 	 * to avoid control flow dependencies, we replace pwd_value by a dummy
 	 * quadratic non residue if we generate a value >= prime.
@@ -1548,6 +1548,26 @@ struct auth_proto *sae_sm_new(struct handshake_state *hs,
 	}
 
 	return &sm->ap;
+}
+
+bool sae_sm_force_hunt_and_peck(struct auth_proto *ap)
+{
+	struct sae_sm *sm = l_container_of(ap, struct sae_sm, ap);
+
+	sae_debug("Forcing SAE Hunting and Pecking");
+	sm->sae_type = CRYPTO_SAE_LOOPING;
+
+	return true;
+}
+
+bool sae_sm_force_default_group(struct auth_proto *ap)
+{
+	struct sae_sm *sm = l_container_of(ap, struct sae_sm, ap);
+
+	sae_debug("Forcing Default Group");
+	sm->force_default_group = true;
+
+	return true;
 }
 
 static int sae_init(void)

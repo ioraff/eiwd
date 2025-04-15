@@ -234,8 +234,7 @@ static bool can_read_data(struct l_io *io, void *user_data)
 	if (len < 0)
 		return false;
 
-	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
-					cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		struct nl_pktinfo *pktinfo;
 
 		if (cmsg->cmsg_level != SOL_NETLINK)

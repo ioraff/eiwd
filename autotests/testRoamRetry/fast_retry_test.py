@@ -17,7 +17,7 @@ from hwsim import Hwsim
 class Test(unittest.TestCase):
     # Normally the time between a failed roam attempt and the next roam attempt
     # is 60 seconds (default RoamRetryInterval). Test that we retry roaming
-    # faster if the transision looks like this: LOW [roam] [same bss] HIGH LOW.
+    # faster if the transition looks like this: LOW [roam] [same bss] HIGH LOW.
     def test_fast_retry(self):
         hwsim = Hwsim()
 

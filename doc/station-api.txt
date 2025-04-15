@@ -166,7 +166,7 @@ Properties	string State [readonly]
 
 		object ConnectedAccessPoint [readonly, optional]
 
-			net.connman.iwd.BasicServiceSet object represeting the
+			net.connman.iwd.BasicServiceSet object representing the
 			BSS the device is currently connected to or to which
 			a connection is in progress.
 

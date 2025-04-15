@@ -29,6 +29,7 @@
 struct handshake_state;
 enum crypto_cipher;
 struct eapol_frame;
+struct pmksa;
 
 enum handshake_kde {
 	/* 802.11-2020 Table 12-9 in section 12.7.2 */
@@ -141,6 +142,11 @@ struct handshake_state {
 	bool supplicant_ocvc : 1;
 	bool ext_key_id_capable : 1;
 	bool force_default_ecc_group : 1;
+	bool have_pmksa : 1;
+	union {
+		struct pmksa *pmksa;
+		uint64_t expiration;
+	};
 	uint8_t ssid[SSID_MAX_SIZE];
 	size_t ssid_len;
 	char *passphrase;
@@ -170,6 +176,8 @@ struct handshake_state {
 	bool in_event;
 
 	handshake_event_func_t event_func;
+
+	int refcount;
 };
 
 #define HSID(x) UNIQUE_ID(handshake_, x)
@@ -186,7 +194,7 @@ struct handshake_state {
 					##__VA_ARGS__);			\
 									\
 			if (!HSID(hs)->in_event) {			\
-				handshake_state_free(HSID(hs));		\
+				handshake_state_unref(HSID(hs));	\
 				HSID(freed) = true;			\
 			} else						\
 				HSID(hs)->in_event = false;		\
@@ -194,7 +202,8 @@ struct handshake_state {
 		HSID(freed);						\
 	})
 
-void handshake_state_free(struct handshake_state *s);
+struct handshake_state *handshake_state_ref(struct handshake_state *s);
+void handshake_state_unref(struct handshake_state *s);
 
 void handshake_state_set_supplicant_address(struct handshake_state *s,
 						const uint8_t *spa);
@@ -299,6 +308,10 @@ void handshake_state_set_chandef(struct handshake_state *s,
 int handshake_state_verify_oci(struct handshake_state *s, const uint8_t *oci,
 				size_t oci_len);
 
+bool handshake_state_set_pmksa(struct handshake_state *s, struct pmksa *pmksa);
+void handshake_state_cache_pmksa(struct handshake_state *s);
+bool handshake_state_remove_pmksa(struct handshake_state *s);
+
 bool handshake_util_ap_ie_matches(const struct ie_rsn_info *msg_info,
 					const uint8_t *scan_ie, bool is_wpa);
 
@@ -316,4 +329,4 @@ void handshake_util_build_gtk_kde(enum crypto_cipher cipher, const uint8_t *key,
 void handshake_util_build_igtk_kde(enum crypto_cipher cipher, const uint8_t *key,
 					unsigned int key_index, uint8_t *to);
 
-DEFINE_CLEANUP_FUNC(handshake_state_free);
+DEFINE_CLEANUP_FUNC(handshake_state_unref);

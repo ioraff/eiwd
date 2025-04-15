@@ -131,7 +131,7 @@ char **anqp_parse_nai_realms(const unsigned char *anqp, unsigned int len)
 	uint16_t count;
 
 	if (len < 2)
-		return false;
+		return NULL;
 
 	count = l_get_le16(anqp);
 

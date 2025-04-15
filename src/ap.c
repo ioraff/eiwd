@@ -230,7 +230,7 @@ static void ap_stop_handshake(struct sta_state *sta)
 	}
 
 	if (sta->hs) {
-		handshake_state_free(sta->hs);
+		handshake_state_unref(sta->hs);
 		sta->hs = NULL;
 	}
 
@@ -3914,34 +3914,34 @@ struct ap_state *ap_start(struct netdev *netdev, struct l_settings *config,
 
 	if (!frame_watch_add(wdev_id, 0, 0x0000 |
 			(MPDU_MANAGEMENT_SUBTYPE_ASSOCIATION_REQUEST << 4),
-			NULL, 0, ap_assoc_req_cb, ap, NULL))
+			NULL, 0, false, ap_assoc_req_cb, ap, NULL))
 		goto error;
 
 	if (!frame_watch_add(wdev_id, 0, 0x0000 |
 			(MPDU_MANAGEMENT_SUBTYPE_REASSOCIATION_REQUEST << 4),
-			NULL, 0, ap_reassoc_req_cb, ap, NULL))
+			NULL, 0, false, ap_reassoc_req_cb, ap, NULL))
 		goto error;
 
 	if (!wiphy_supports_probe_resp_offload(wiphy)) {
 		if (!frame_watch_add(wdev_id, 0, 0x0000 |
 				(MPDU_MANAGEMENT_SUBTYPE_PROBE_REQUEST << 4),
-				NULL, 0, ap_probe_req_cb, ap, NULL))
+				NULL, 0, false, ap_probe_req_cb, ap, NULL))
 			goto error;
 	}
 
 	if (!frame_watch_add(wdev_id, 0, 0x0000 |
 				(MPDU_MANAGEMENT_SUBTYPE_DISASSOCIATION << 4),
-				NULL, 0, ap_disassoc_cb, ap, NULL))
+				NULL, 0, false, ap_disassoc_cb, ap, NULL))
 		goto error;
 
 	if (!frame_watch_add(wdev_id, 0, 0x0000 |
 				(MPDU_MANAGEMENT_SUBTYPE_AUTHENTICATION << 4),
-				NULL, 0, ap_auth_cb, ap, NULL))
+				NULL, 0, false, ap_auth_cb, ap, NULL))
 		goto error;
 
 	if (!frame_watch_add(wdev_id, 0, 0x0000 |
 				(MPDU_MANAGEMENT_SUBTYPE_DEAUTHENTICATION << 4),
-				NULL, 0, ap_deauth_cb, ap, NULL))
+				NULL, 0, false, ap_deauth_cb, ap, NULL))
 		goto error;
 
 	ap->mlme_watch = l_genl_family_register(ap->nl80211, "mlme",

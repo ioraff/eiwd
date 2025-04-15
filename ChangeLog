@@ -1,3 +1,35 @@
+ver 3.6:
+	Fix issue with handling blacklisting and roaming requests.
+	Fix issue with handling CQM thresholds for FullMAC devices.
+	Add support for PMKSA when using FullMAC devices.
+
+ver 3.5:
+	Add support for option to disable blacklist handling.
+	Add support for option to disable SAE for broken drivers.
+
+ver 3.4:
+	Add support for the Test Anything Protocol.
+
+ver 3.3:
+	Fix issue with handling External Authentication.
+
+ver 3.2:
+	Fix issue with GCC 15 and -std=c23 build errors.
+	Add support for using PMKSA over SAE if available.
+	Add support for HighUtilization/StationCount thresholds.
+	Add support for disabling Multicast RX option.
+
+ver 3.1:
+	Fix issue with handling OWE transition BSS selection.
+	Fix issue with handling oper class 136 starting frequency.
+
+ver 3.0:
+	Fix issue with handling alpha2 code for United Kingdom.
+	Fix issue with handling empty TX/RX bitrate attributes.
+	Fix issue with handling RSSI polling fallback workaround.
+	Fix issue with handling harmless cloned information elements.
+	Add experimental support for External Authentication feature.
+
 ver 2.22:
 	Fix issue with handling the Affinities property.
 	Fix issue with handling ConnectedAccessPoint signal when roaming.

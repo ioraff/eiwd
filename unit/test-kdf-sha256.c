@@ -52,7 +52,7 @@ static void kdf_test(const void *data)
 
 	kdf_len = strlen(test->kdf) / 2;
 
-	printf("PRF    = %s (%d octects)\n", test->kdf, kdf_len);
+	printf("PRF    = %s (%d octets)\n", test->kdf, kdf_len);
 
 	result = kdf_sha256(test->key, test->key_len, test->prefix,
 				test->prefix_len, test->data, test->data_len,

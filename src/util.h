@@ -106,6 +106,17 @@ static inline bool util_ip_subnet_match(uint8_t prefix_len,
 		  ~((1u << (8 - (prefix_len % 8))) - 1));
 }
 
+/*
+ * Linearly maps (interpolates) 'value' from range 'a' to range 'b'
+ *
+ * Fails if:
+ *    - value is not between a and b
+ *    - a_start == a_end
+ *    - b_start == b_end
+ */
+bool util_linear_map(double value, double a_start, double a_end,
+			double b_start, double b_end, double *mapped_value);
+
 typedef void (*scan_freq_set_func_t)(uint32_t freq, void *userdata);
 
 struct scan_freq_set *scan_freq_set_new(void);
@@ -129,5 +140,7 @@ struct scan_freq_set *scan_freq_set_clone(const struct scan_freq_set *set,
 						uint32_t band_mask);
 
 DEFINE_CLEANUP_FUNC(scan_freq_set_free);
+
+double util_exponential_decay(unsigned int n);
 
 #endif /* __UTIL_H */

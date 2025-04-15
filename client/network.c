@@ -219,7 +219,7 @@ static void network_display_inline(const char *margin, const void *data)
 
 	display("%s%s %s %s\n", margin, network->name ? network->name : "",
 			network->type ? network->type : "",
-			network->connected ? "connected" : "diconnected");
+			network->connected ? "connected" : "disconnected");
 }
 
 static void *network_create(void)

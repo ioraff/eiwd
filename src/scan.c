@@ -56,6 +56,8 @@
 static double RANK_2G_FACTOR;
 static double RANK_5G_FACTOR;
 static double RANK_6G_FACTOR;
+static uint32_t RANK_HIGH_UTILIZATION;
+static uint32_t RANK_HIGH_STATION_COUNT;
 static uint32_t SCAN_MAX_INTERVAL;
 static uint32_t SCAN_INIT_INTERVAL;
 
@@ -1343,8 +1345,8 @@ static bool scan_parse_bss_information_elements(struct scan_bss *bss,
 								iter.len + 2);
 			break;
 		case IE_TYPE_BSS_LOAD:
-			if (ie_parse_bss_load(&iter, NULL, &bss->utilization,
-						NULL) < 0)
+			if (ie_parse_bss_load(&iter, &bss->sta_count,
+						&bss->utilization, NULL) < 0)
 				l_warn("Unable to parse BSS Load IE for "
 					MAC, MAC_STR(bss->addr));
 			else
@@ -1681,10 +1683,77 @@ static struct scan_bss *scan_parse_result(struct l_genl_msg *msg,
 	return bss;
 }
 
-static void scan_bss_compute_rank(struct scan_bss *bss)
+static double scan_legacy_utilization_factor(uint8_t utilization)
 {
 	static const double RANK_HIGH_UTILIZATION_FACTOR = 0.8;
 	static const double RANK_LOW_UTILIZATION_FACTOR = 1.2;
+
+	if (utilization >= 192)
+		return RANK_HIGH_UTILIZATION_FACTOR;
+	else if (utilization <= 63)
+		return RANK_LOW_UTILIZATION_FACTOR;
+
+	return 1.0;
+}
+
+static double scan_get_load_factors(uint8_t utilization, uint16_t sta_count)
+{
+	double n;
+	double factor = 1.0;
+	/*
+	 * The exponential decay table has 64 entries (0 <= n <= 63) which range
+	 * from 1.0 to 0.28. For the utilization and station count factors we
+	 * likely don't want to adjust the rank so drastically (potentially a
+	 * 78% reduction in the worse case) so cap the index at 30 which equates
+	 * to ~64% at the worst case.
+	 */
+	static const uint8_t LOAD_DECAY_OFFSET = 30;
+
+	if (!RANK_HIGH_UTILIZATION) {
+		/*
+		 * To maintain existing behavior, if the utilization factor is
+		 * unset (default) fall back to the static thresholds and
+		 * factor weights.
+		 */
+		factor = scan_legacy_utilization_factor(utilization);
+		goto sta_count;
+	} else if (utilization < RANK_HIGH_UTILIZATION)
+		goto sta_count;
+
+	/* Map the utilization threshold -> 255 to rankmod_table indexes */
+	if (L_WARN_ON(!util_linear_map(utilization, RANK_HIGH_UTILIZATION,
+					255, 0, LOAD_DECAY_OFFSET, &n)))
+		goto sta_count;
+
+	factor = util_exponential_decay(n);
+
+sta_count:
+	if (!RANK_HIGH_STATION_COUNT || sta_count < RANK_HIGH_STATION_COUNT)
+		return factor;
+
+	/*
+	 * The station count is a uint16 so in theory it could be excessively
+	 * large. In practice APs generally can't handle anywhere near this so
+	 * put a cap at 255. If at some time in the future APs begin to handle
+	 * this level of capacity we could increase this.
+	 *
+	 * TODO: A warning is used here to make this visible. If we see cases
+	 * where this is happening we may need to give this another look.
+	 */
+	if (L_WARN_ON(sta_count > 255))
+		sta_count = 255;
+
+	if (L_WARN_ON(!util_linear_map(sta_count, RANK_HIGH_STATION_COUNT,
+					255, 0, LOAD_DECAY_OFFSET, &n)))
+		return factor;
+
+	factor *= util_exponential_decay(n);
+
+	return factor;
+}
+
+static void scan_bss_compute_rank(struct scan_bss *bss)
+{
 	static const double RANK_HIGH_SNR_FACTOR = 1.2;
 	static const double RANK_LOW_SNR_FACTOR = 0.8;
 	double rank;
@@ -1708,12 +1777,8 @@ static void scan_bss_compute_rank(struct scan_bss *bss)
 		rank *= RANK_6G_FACTOR;
 
 	/* Rank loaded APs lower and lightly loaded APs higher */
-	if (bss->have_utilization) {
-		if (bss->utilization >= 192)
-			rank *= RANK_HIGH_UTILIZATION_FACTOR;
-		else if (bss->utilization <= 63)
-			rank *= RANK_LOW_UTILIZATION_FACTOR;
-	}
+	if (bss->have_utilization)
+		rank *= scan_get_load_factors(bss->utilization, bss->sta_count);
 
 	if (bss->have_snr) {
 		if (bss->snr <= 15)
@@ -2598,6 +2663,20 @@ static int scan_init(void)
 
 	if (SCAN_MAX_INTERVAL > UINT16_MAX)
 		SCAN_MAX_INTERVAL = UINT16_MAX;
+
+	if (!l_settings_get_uint(config, "Rank", "HighUtilizationThreshold",
+					&RANK_HIGH_UTILIZATION))
+		RANK_HIGH_UTILIZATION = 0;
+
+	if (L_WARN_ON(RANK_HIGH_UTILIZATION > 255))
+		RANK_HIGH_UTILIZATION = 255;
+
+	if (!l_settings_get_uint(config, "Rank", "HighStationCountThreshold",
+					&RANK_HIGH_STATION_COUNT))
+		RANK_HIGH_STATION_COUNT = 0;
+
+	if (L_WARN_ON(RANK_HIGH_STATION_COUNT > 255))
+		RANK_HIGH_STATION_COUNT = 255;
 
 	return 0;
 }

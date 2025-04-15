@@ -722,7 +722,7 @@ int wsc_parse_attrs(const unsigned char *pdu, unsigned int len,
 			}
 		}
 
-		if (e2 == NULL) {
+		if (!e2) {
 			if (!ext_iter)
 				break;
 

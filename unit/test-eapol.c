@@ -94,6 +94,7 @@ static struct handshake_state *test_handshake_state_new(uint32_t ifindex)
 
 	ths->super.ifindex = ifindex;
 	ths->super.free = test_handshake_state_free;
+	ths->super.refcount = 1;
 
 	return &ths->super;
 }
@@ -2199,7 +2200,7 @@ static void eapol_sm_test_ptk(const void *data)
 	assert(verify_step4_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -2263,7 +2264,7 @@ static void eapol_sm_test_igtk(const void *data)
 	assert(verify_step4_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -2332,7 +2333,7 @@ static void eapol_sm_test_wpa2_ptk_gtk(const void *data)
 	assert(verify_gtk_step2_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -2399,7 +2400,7 @@ static void eapol_sm_test_wpa_ptk_gtk(const void *data)
 	assert(verify_gtk_step2_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -2467,7 +2468,7 @@ static void eapol_sm_test_wpa_ptk_gtk_2(const void *data)
 	assert(verify_gtk_step2_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -2721,7 +2722,7 @@ static void eapol_sm_wpa2_retransmit_test(const void *data)
 	l_free(ptk);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -3141,7 +3142,7 @@ done:
 	if (sm)
 		eapol_sm_free(sm);
 
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 	eap_exit();
 }
@@ -3424,7 +3425,7 @@ static void eapol_sm_test_eap_nak(const void *data)
 				sizeof(eap_failure), false);
 	assert(ths->handshake_failed);
 
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 	eap_exit();
 }
@@ -3510,7 +3511,7 @@ static void eapol_ft_handshake_test(const void *data)
 	assert(verify_step4_called);
 
 	eapol_sm_free(sm);
-	handshake_state_free(hs);
+	handshake_state_unref(hs);
 	eapol_exit();
 }
 
@@ -3609,6 +3610,7 @@ static struct handshake_state *test_ap_sta_hs_new(struct test_ap_sta_data *s,
 
 	ths->super.ifindex = ifindex;
 	ths->super.free = (void (*)(struct handshake_state *s)) l_free;
+	ths->super.refcount = 1;
 	ths->s = s;
 
 	return &ths->super;
@@ -3692,8 +3694,10 @@ static void eapol_ap_sta_handshake_test(const void *data)
 
 	test_ap_sta_run(&s);
 
-	handshake_state_free(s.ap_hs);
-	handshake_state_free(s.sta_hs);
+	l_info("freeing in eapol_ap_sta_handshake_test()");
+
+	handshake_state_unref(s.ap_hs);
+	handshake_state_unref(s.sta_hs);
 	__handshake_set_install_tk_func(NULL);
 
 	assert(s.ap_success && s.sta_success);
@@ -3753,8 +3757,8 @@ static void eapol_ap_sta_handshake_bad_psk_test(const void *data)
 
 	test_ap_sta_run(&s);
 
-	handshake_state_free(s.ap_hs);
-	handshake_state_free(s.sta_hs);
+	handshake_state_unref(s.ap_hs);
+	handshake_state_unref(s.sta_hs);
 	__handshake_set_install_tk_func(NULL);
 
 	/*
@@ -3825,8 +3829,8 @@ static void eapol_ap_sta_handshake_ip_alloc_ok_test(const void *data)
 	assert(s.sta_hs->subnet_mask == s.ap_hs->subnet_mask);
 	assert(s.sta_hs->go_ip_addr == s.ap_hs->go_ip_addr);
 
-	handshake_state_free(s.ap_hs);
-	handshake_state_free(s.sta_hs);
+	handshake_state_unref(s.ap_hs);
+	handshake_state_unref(s.sta_hs);
 	__handshake_set_install_tk_func(NULL);
 
 	assert(s.ap_success && s.sta_success);
@@ -3889,8 +3893,8 @@ static void eapol_ap_sta_handshake_ip_alloc_no_req_test(const void *data)
 	assert(!s.ap_hs->support_ip_allocation);
 	assert(!s.sta_hs->support_ip_allocation);
 
-	handshake_state_free(s.ap_hs);
-	handshake_state_free(s.sta_hs);
+	handshake_state_unref(s.ap_hs);
+	handshake_state_unref(s.sta_hs);
 	__handshake_set_install_tk_func(NULL);
 
 	assert(s.ap_success && s.sta_success);

@@ -11,7 +11,7 @@ from iwd import NetworkType
 
 class TestMFP(unittest.TestCase):
     '''
-    The bellow test cases excesise the following MFP option setting scenarios:
+    The below test cases excesise the following MFP option setting scenarios:
 
     IWD_MFP: AP_MFP:  Result:
     0        0        No MFP, connection succeeds

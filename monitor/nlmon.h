@@ -25,12 +25,22 @@
 
 struct nlmon;
 
+enum time_format {
+	TIME_FORMAT_DELTA,
+	TIME_FORMAT_UTC,
+};
+
 struct nlmon_config {
 	bool nortnl;
 	bool nowiphy;
 	bool noscan;
 	bool noies;
 	bool read_only;
+	enum time_format time_format;
+
+	/* File size in MB */
+	uint32_t pcap_file_size;
+	uint32_t pcap_file_count;
 };
 
 struct nlmon *nlmon_open(uint16_t id, const char *pathname,

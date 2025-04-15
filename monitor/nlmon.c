@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -42,6 +43,7 @@
 #include <linux/genetlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/filter.h>
+#include <linux/limits.h>
 #include <ell/ell.h>
 
 #ifndef ARPHRD_NETLINK
@@ -93,6 +95,8 @@
 #define BSS_CAPABILITY_APSD		(1<<11)
 #define BSS_CAPABILITY_DSSS_OFDM	(1<<13)
 
+#define BYTES_PER_MB			1000000
+
 struct nlmon *cur_nlmon;
 
 enum msg_type {
@@ -113,6 +117,12 @@ struct nlmon {
 	bool noscan;
 	bool noies;
 	bool read;
+	enum time_format time_format;
+
+	char *file_prefix;
+	unsigned int file_idx;
+	unsigned int max_files;
+	unsigned int max_size;
 };
 
 struct nlmon_req {
@@ -185,11 +195,15 @@ static void nlmon_req_free(void *data)
 }
 
 static time_t time_offset = ((time_t) -1);
+static enum time_format time_format;
 
-static inline void update_time_offset(const struct timeval *tv)
+static inline void update_time_offset(const struct timeval *tv,
+					enum time_format tf)
 {
-	if (tv && time_offset == ((time_t) -1))
+	if (tv && time_offset == ((time_t) -1)) {
 		time_offset = tv->tv_sec;
+		time_format = tf;
+	}
 }
 
 #define print_indent(indent, color1, prefix, title, color2, fmt, args...) \
@@ -225,15 +239,38 @@ static void print_packet(const struct timeval *tv, char ident,
 	int n, ts_len = 0, ts_pos = 0, len = 0, pos = 0;
 
 	if (tv) {
+		struct tm *tm;
+
 		if (use_color()) {
 			n = sprintf(ts_str + ts_pos, "%s", COLOR_TIMESTAMP);
 			if (n > 0)
 				ts_pos += n;
 		}
 
-		n = sprintf(ts_str + ts_pos, " %" PRId64 ".%06" PRId64,
+		switch (time_format) {
+		case TIME_FORMAT_DELTA:
+			n = sprintf(ts_str + ts_pos, " %" PRId64 ".%06" PRId64,
 					(int64_t)tv->tv_sec - time_offset,
 					(int64_t)tv->tv_usec);
+			break;
+		case TIME_FORMAT_UTC:
+			tm = gmtime(&tv->tv_sec);
+			if (!tm) {
+				n = sprintf(ts_str + ts_pos, "%s",
+						"Time error");
+				break;
+			}
+
+			n = strftime(ts_str + ts_pos, sizeof(ts_str) - ts_pos,
+					"%b %d %H:%M:%S", tm);
+			break;
+		default:
+			/* Should never happen */
+			printf("Unknown time format");
+			l_main_quit();
+			return;
+		}
+
 		if (n > 0) {
 			ts_pos += n;
 			ts_len += n;
@@ -491,7 +528,30 @@ static void print_ie_country(unsigned int level, const char *label,
 		return;
 	}
 
-	print_attr(level, "%s: %c%c%c", label, code[0], code[1], code[2]);
+	print_attr(level, "%s: %c%c", label, code[0], code[1]);
+
+	switch (code[2]) {
+	case ' ':
+		print_attr(level + 1,
+			"3rd octet: 0x%02x: All environments", code[2]);
+		break;
+	case 'O':
+		print_attr(level + 1,
+			"3rd octet: 0x%02x: Outdoor environments", code[2]);
+		break;
+	case 'I':
+		print_attr(level + 1,
+			"3rd octet: 0x%02x: Indoor environments", code[2]);
+		break;
+	case 'X':
+		print_attr(level + 1,
+			"3rd octet: 0x%02x: Non-country entity", code[2]);
+		break;
+	default:
+		print_attr(level + 1,
+			"3rd octet: 0x%02x: Annex E table", code[2]);
+		break;
+	}
 
 	while (i < size) {
 		if (code[i] > 200) {
@@ -1658,7 +1718,7 @@ static void print_ie_vht_capabilities(unsigned int level,
 		[21] = "TXOP PS",
 		[22] = "+HTC-VHT Capable",
 		[23 ... 25] = "Maximum A-MPDU Length Exponent",
-		[26 ... 27] = "VHT Link Adapation Capable",
+		[26 ... 27] = "VHT Link Adaptation Capable",
 		[28] = "RX Antenna Pattern Consistency",
 		[29] = "TX Antenna Pattern Consistency",
 		[30 ... 31] = "Extended NSS BW Support",
@@ -7341,6 +7401,64 @@ static bool nlmon_req_match(const void *a, const void *b)
 	return (req->seq == match->seq && req->pid == match->pid);
 }
 
+/*
+ * Ensures that PCAP names are zero padded when needed. This makes the files
+ * sort correctly.
+ */
+static void next_pcap_name(char *buf, size_t size, const char *prefix,
+				unsigned int idx, unsigned int max)
+{
+	unsigned int ndigits = 1;
+
+	while (max > 9) {
+		max /= 10;
+		ndigits++;
+	}
+
+	snprintf(buf, size, "%s%.*u", prefix, ndigits, idx);
+}
+
+static bool check_pcap(struct nlmon *nlmon, size_t next_size)
+{
+	char path[PATH_MAX];
+
+	if (!nlmon->pcap)
+		return false;
+
+	if (!nlmon->max_size)
+		return true;
+
+	if (pcap_get_size(nlmon->pcap) + next_size <= nlmon->max_size)
+		return true;
+
+	pcap_close(nlmon->pcap);
+
+	/* Exausted the single PCAP file */
+	if (nlmon->max_files < 2) {
+		printf("Reached maximum size of PCAP, exiting\n");
+		nlmon->pcap = NULL;
+		l_main_quit();
+		return false;
+	}
+
+	next_pcap_name(path, sizeof(path), nlmon->file_prefix,
+			++nlmon->file_idx, nlmon->max_files);
+
+	nlmon->pcap = pcap_create(path);
+
+	if (nlmon->max_files > nlmon->file_idx)
+		return true;
+
+	/* Remove oldest PCAP file */
+	next_pcap_name(path, sizeof(path), nlmon->file_prefix,
+		nlmon->file_idx - nlmon->max_files, nlmon->max_files);
+
+	if (remove(path) < 0)
+		printf("Failed to remove old PCAP file %s\n", path);
+
+	return true;
+}
+
 static void store_packet(struct nlmon *nlmon, const struct timeval *tv,
 					uint16_t pkt_type,
 					uint16_t arphrd_type,
@@ -7349,7 +7467,7 @@ static void store_packet(struct nlmon *nlmon, const struct timeval *tv,
 {
 	uint8_t sll_hdr[16], *buf = sll_hdr;
 
-	if (!nlmon->pcap)
+	if (!check_pcap(nlmon, sizeof(sll_hdr) + size))
 		return;
 
 	memset(sll_hdr, 0, sizeof(sll_hdr));
@@ -7474,6 +7592,10 @@ struct nlmon *nlmon_create(uint16_t id, const struct nlmon_config *config)
 	nlmon->noscan = config->noscan;
 	nlmon->noies = config->noies;
 	nlmon->read = config->read_only;
+	nlmon->time_format = config->time_format;
+	nlmon->max_files = config->pcap_file_count;
+	/* Command line expects MB, but use bytes internally */
+	nlmon->max_size = config->pcap_file_size * BYTES_PER_MB;
 
 	return nlmon;
 }
@@ -8310,7 +8432,10 @@ void nlmon_print_rtnl(struct nlmon *nlmon, const struct timeval *tv,
 	int64_t aligned_size = NLMSG_ALIGN(size);
 	const struct nlmsghdr *nlmsg;
 
-	update_time_offset(tv);
+	if (nlmon->nortnl)
+		return;
+
+	update_time_offset(tv, nlmon->time_format);
 
 	for (nlmsg = data; NLMSG_OK(nlmsg, aligned_size);
 				nlmsg = NLMSG_NEXT(nlmsg, aligned_size)) {
@@ -8348,7 +8473,7 @@ void nlmon_print_genl(struct nlmon *nlmon, const struct timeval *tv,
 {
 	const struct nlmsghdr *nlmsg;
 
-	update_time_offset(tv);
+	update_time_offset(tv, nlmon->time_format);
 
 	for (nlmsg = data; NLMSG_OK(nlmsg, size);
 				nlmsg = NLMSG_NEXT(nlmsg, size)) {
@@ -8371,7 +8496,7 @@ void nlmon_print_pae(struct nlmon *nlmon, const struct timeval *tv,
 {
 	char extra_str[16];
 
-	update_time_offset(tv);
+	update_time_offset(tv, nlmon->time_format);
 
 	sprintf(extra_str, "len %u", size);
 
@@ -8498,13 +8623,20 @@ struct nlmon *nlmon_open(uint16_t id, const char *pathname,
 	struct nlmon *nlmon;
 	struct l_io *pae_io;
 	struct pcap *pcap;
+	char path[PATH_MAX];
 
 	pae_io = open_pae();
 	if (!pae_io)
 		return NULL;
 
 	if (pathname) {
-		pcap = pcap_create(pathname);
+		if (config->pcap_file_count > 1)
+			next_pcap_name(path, sizeof(path), pathname,
+					0, config->pcap_file_count);
+		else
+			snprintf(path, sizeof(path), "%s", pathname);
+
+		pcap = pcap_create(path);
 		if (!pcap) {
 			l_io_destroy(pae_io);
 			return NULL;
@@ -8517,6 +8649,7 @@ struct nlmon *nlmon_open(uint16_t id, const char *pathname,
 
 	nlmon->pae_io = pae_io;
 	nlmon->pcap = pcap;
+	nlmon->file_prefix = l_strdup(pathname);
 
 	l_io_set_read_handler(nlmon->pae_io, pae_receive, nlmon, NULL);
 
@@ -8538,6 +8671,8 @@ void nlmon_close(struct nlmon *nlmon)
 
 	if (nlmon->pcap)
 		pcap_close(nlmon->pcap);
+
+	l_free(nlmon->file_prefix);
 
 	l_free(nlmon);
 }

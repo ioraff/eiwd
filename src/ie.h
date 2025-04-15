@@ -598,6 +598,23 @@ static inline const unsigned char *ie_tlv_iter_get_data(
 	return iter->data;
 }
 
+static inline bool ie_tlv_iter_data_eq(struct ie_tlv_iter *a,
+					struct ie_tlv_iter *b)
+{
+	if (a == b)
+		return true;
+
+	if (a == NULL || b == NULL)
+		return false;
+
+	if (ie_tlv_iter_get_length(a) != ie_tlv_iter_get_length(b))
+		return false;
+
+	return memcmp(ie_tlv_iter_get_data(a),
+			ie_tlv_iter_get_data(b),
+			ie_tlv_iter_get_length(a)) == 0;
+}
+
 void *ie_tlv_extract_wsc_payload(const uint8_t *ies, size_t len,
 							ssize_t *out_len);
 void *ie_tlv_encapsulate_wsc_payload(const uint8_t *data, size_t len,

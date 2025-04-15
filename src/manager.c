@@ -894,11 +894,11 @@ static int manager_init(void)
 	}
 
 	if (!l_settings_get_bool(config, "General",
-				"UseDefaultInterface", &use_default)) {
+				"UseDefaultInterface", &use_default))
+		use_default = false;
+	else
 		l_warn("[General].UseDefaultInterface is deprecated, please "
 			"use [DriverQuirks].DefaultInterface instead");
-		use_default = false;
-	}
 
 	return 0;
 

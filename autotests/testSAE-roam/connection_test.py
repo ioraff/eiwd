@@ -13,7 +13,7 @@ import testutil
 from config import ctx
 
 class Test(unittest.TestCase):
-    def validate_connection(self, wd, ft=True):
+    def validate_connection(self, wd, ft=True, check_used_pmksa=False):
         device = wd.list_devices(1)[0]
 
         # This won't guarantee all BSS's are found, but at least ensures that
@@ -36,6 +36,14 @@ class Test(unittest.TestCase):
         testutil.test_ifaces_connected(self.bss_hostapd[0].ifname, device.name)
         self.assertRaises(Exception, testutil.test_ifaces_connected,
                           (self.bss_hostapd[1].ifname, device.name, True, True))
+
+        # If PMKSA was used, hostapd should not include the sae_group key in
+        # its status for the station.
+        sta_status = self.bss_hostapd[0].sta_status(device.address)
+        if check_used_pmksa:
+            self.assertNotIn("sae_group", sta_status.keys())
+        else:
+            self.assertIn("sae_group", sta_status.keys())
 
         device.roam(self.bss_hostapd[1].bssid)
 
@@ -88,6 +96,31 @@ class Test(unittest.TestCase):
 
         self.validate_connection(wd, True)
 
+    def test_ft_roam_pmksa(self):
+        wd = IWD(True)
+
+        self.bss_hostapd[0].set_value('wpa_key_mgmt', 'FT-SAE SAE')
+        self.bss_hostapd[0].reload()
+        self.bss_hostapd[0].wait_for_event("AP-ENABLED")
+        self.bss_hostapd[1].set_value('wpa_key_mgmt', 'FT-SAE SAE')
+        self.bss_hostapd[1].reload()
+        self.bss_hostapd[1].wait_for_event("AP-ENABLED")
+        self.bss_hostapd[2].set_value('wpa_key_mgmt', 'FT-PSK')
+        self.bss_hostapd[2].reload()
+        self.bss_hostapd[2].wait_for_event("AP-ENABLED")
+
+        self.validate_connection(wd, True)
+
+        device = wd.list_devices(1)[0]
+        device.disconnect()
+
+        for hapd in self.bss_hostapd:
+            hapd.deauthenticate(device.address)
+
+        wd.wait(5)
+
+        self.validate_connection(wd, True, check_used_pmksa=True)
+
     def test_reassociate_roam_success(self):
         wd = IWD(True)
 
@@ -102,6 +135,31 @@ class Test(unittest.TestCase):
         self.bss_hostapd[2].wait_for_event("AP-ENABLED")
 
         self.validate_connection(wd, False)
+
+    def test_reassociate_roam_pmksa(self):
+        wd = IWD(True)
+
+        self.bss_hostapd[0].set_value('wpa_key_mgmt', 'SAE')
+        self.bss_hostapd[0].reload()
+        self.bss_hostapd[0].wait_for_event("AP-ENABLED")
+        self.bss_hostapd[1].set_value('wpa_key_mgmt', 'SAE')
+        self.bss_hostapd[1].reload()
+        self.bss_hostapd[1].wait_for_event("AP-ENABLED")
+        self.bss_hostapd[2].set_value('wpa_key_mgmt', 'WPA-PSK')
+        self.bss_hostapd[2].reload()
+        self.bss_hostapd[2].wait_for_event("AP-ENABLED")
+
+        self.validate_connection(wd, False)
+
+        device = wd.list_devices(1)[0]
+        device.disconnect()
+
+        for hapd in self.bss_hostapd:
+            hapd.deauthenticate(device.address)
+
+        wd.wait(5)
+
+        self.validate_connection(wd, False, check_used_pmksa=True)
 
     def tearDown(self):
         os.system('ip link set "' + self.bss_hostapd[0].ifname + '" down')
