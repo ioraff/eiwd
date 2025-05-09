@@ -143,9 +143,9 @@ struct scan_survey {
 };
 
 struct scan_survey_results {
-	struct scan_survey survey_2_4[14];
-	struct scan_survey survey_5[196];
-	struct scan_survey survey_6[233];
+	struct scan_survey survey_2_4[15];
+	struct scan_survey survey_5[197];
+	struct scan_survey survey_6[234];
 };
 
 struct scan_results {

@@ -403,40 +403,32 @@ static void aes_siv_test(const void *data)
 	assert(memcmp(decrypted, plaintext, sizeof(decrypted)) == 0);
 }
 
+static bool test_precheck(const void *data)
+{
+	return (l_cipher_is_supported(L_CIPHER_AES) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA1, true));
+}
+
+#define add_test(name, func, data) l_test_add_data_func_precheck(name, data, \
+							func, test_precheck, 0)
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_SHA1, true)) {
-		printf("SHA1 support missing, skipping...\n");
-		goto done;
-	}
+	add_test("/Passphrase Generator/PSK Test Case 1",
+						psk_test, &psk_test_case_1);
+	add_test("/Passphrase Generator/PSK Test Case 2",
+						psk_test, &psk_test_case_2);
+	add_test("/Passphrase Generator/PSK Test Case 3",
+						psk_test, &psk_test_case_3);
 
-	if (!l_cipher_is_supported(L_CIPHER_AES)) {
-		printf("AES support missing, skipping...\n");
-		goto done;
-	}
+	add_test("/PTK Derivation/PTK Test Case 1", ptk_test, &ptk_test_1);
+	add_test("/PTK Derivation/PTK Test Case 2", ptk_test, &ptk_test_2);
+	add_test("/PTK Derivation/PTK Test Case 3", ptk_test, &ptk_test_3);
+	add_test("/PTK Derivation/PTK Test Case 4", ptk_test, &ptk_test_4);
 
-	l_test_add("/Passphrase Generator/PSK Test Case 1",
-			psk_test, &psk_test_case_1);
-	l_test_add("/Passphrase Generator/PSK Test Case 2",
-			psk_test, &psk_test_case_2);
-	l_test_add("/Passphrase Generator/PSK Test Case 3",
-			psk_test, &psk_test_case_3);
+	add_test("/AES Key-wrap/Wrap & unwrap", aes_wrap_test, NULL);
+	add_test("/AES-SIV", aes_siv_test, NULL);
 
-	l_test_add("/PTK Derivation/PTK Test Case 1",
-			ptk_test, &ptk_test_1);
-	l_test_add("/PTK Derivation/PTK Test Case 2",
-			ptk_test, &ptk_test_2);
-	l_test_add("/PTK Derivation/PTK Test Case 3",
-			ptk_test, &ptk_test_3);
-	l_test_add("/PTK Derivation/PTK Test Case 4",
-			ptk_test, &ptk_test_4);
-
-	l_test_add("/AES Key-wrap/Wrap & unwrap",
-			aes_wrap_test, NULL);
-	l_test_add("/AES-SIV", aes_siv_test, NULL);
-
-done:
 	return l_test_run();
 }

@@ -444,7 +444,7 @@ unit_tests += unit/test-cmac-aes \
 		unit/test-arc4 unit/test-wsc unit/test-eap-mschapv2 \
 		unit/test-eap-sim unit/test-sae unit/test-p2p unit/test-band \
 		unit/test-dpp unit/test-json unit/test-nl80211util \
-		unit/test-pmksa
+		unit/test-pmksa unit/test-storage
 endif
 
 if CLIENT
@@ -608,6 +608,11 @@ unit_test_nl80211util_LDADD = $(ell_ldadd)
 unit_test_pmksa_SOURCES = unit/test-pmksa.c src/pmksa.c src/pmksa.h \
 				src/module.h src/util.h
 unit_test_pmksa_LDADD = $(ell_ldadd)
+
+unit_test_storage_SOURCES = unit/test-storage.c src/storage.c src/storage.h \
+				src/crypto.c src/crypto.h \
+				src/common.c src/common.h
+unit_test_storage_LDADD = $(ell_ldadd)
 endif
 
 if CLIENT

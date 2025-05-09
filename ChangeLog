@@ -1,3 +1,12 @@
+ver 3.8:
+	Fix issue with handling unit tests and missing kernel features.
+
+ver 3.7:
+	Fix issue with handling length of EncryptedSecurity.
+	Fix issue with handling empty affinities lists.
+	Fix issue with handling survey scanning results.
+	Fix issue with handling duplicate values in DPP URI.
+
 ver 3.6:
 	Fix issue with handling blacklisting and roaming requests.
 	Fix issue with handling CQM thresholds for FullMAC devices.

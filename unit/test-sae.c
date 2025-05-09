@@ -871,32 +871,29 @@ static void test_pt_pwe(const void *data)
 	l_ecc_point_free(pt);
 }
 
+static bool test_precheck(const void *data)
+{
+	return (l_getrandom_is_supported() &&
+		l_checksum_is_supported(L_CHECKSUM_SHA256, true));
+}
+
+#define add_test(name, func) l_test_add_func_precheck(name, func, \
+							test_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_getrandom_is_supported()) {
-		l_info("l_getrandom not supported, skipping...");
-		goto done;
-	}
+	add_test("SAE anti-clogging", test_clogging);
+	add_test("SAE early confirm", test_early_confirm);
+	add_test("SAE reflection", test_reflection);
+	add_test("SAE malformed commit", test_malformed_commit);
+	add_test("SAE malformed confirm", test_malformed_confirm);
+	add_test("SAE bad group", test_bad_group);
+	add_test("SAE bad confirm", test_bad_confirm);
+	add_test("SAE confirm after accept", test_confirm_after_accept);
+	add_test("SAE end-to-end", test_end_to_end);
+	add_test("SAE pt-pwe", test_pt_pwe);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_SHA256, true)) {
-		l_info("SHA256/HMAC_SHA256 not supported, skipping...");
-		goto done;
-	}
-
-	l_test_add("SAE anti-clogging", test_clogging, NULL);
-	l_test_add("SAE early confirm", test_early_confirm, NULL);
-	l_test_add("SAE reflection", test_reflection, NULL);
-	l_test_add("SAE malformed commit", test_malformed_commit, NULL);
-	l_test_add("SAE malformed confirm", test_malformed_confirm, NULL);
-	l_test_add("SAE bad group", test_bad_group, NULL);
-	l_test_add("SAE bad confirm", test_bad_confirm, NULL);
-	l_test_add("SAE confirm after accept", test_confirm_after_accept, NULL);
-	l_test_add("SAE end-to-end", test_end_to_end, NULL);
-
-	l_test_add("SAE pt-pwe", test_pt_pwe, NULL);
-
-done:
 	return l_test_run();
 }

@@ -116,6 +116,29 @@ struct dpp_test_info bad_channels[] = {
 	},
 };
 
+struct dpp_test_info duplicates[] = {
+	/* Duplicate key */
+	{
+		.uri = "DPP:K:MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgADURzxmttZoIRIPWGoQMV00XHWCAQIhXruVWOz0NjlkIA=;K:MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgADURzxmttZoIRIPWGoQMV00XHWCAQIhXruVWOz0NjlkIA=;;",
+		.expect_fail = true
+	},
+	/* Duplicate frequencies*/
+	{
+		.uri = "DPP:C:81/1,115/36;C:81/1,115/36;;",
+		.expect_fail = true
+	},
+	/* Duplicate MACs*/
+	{
+		.uri = "DPP:M:5254005828e5;M:5254005828e5;;",
+		.expect_fail = true
+	},
+	/* Duplicate versions */
+	{
+		.uri = "DPP:V:2;V:2;;",
+		.expect_fail = true
+	},
+};
+
 static bool verify_info(const struct dpp_uri_info *parsed,
 			const struct dpp_test_info *result)
 {
@@ -156,6 +179,14 @@ static void test_bad_channels(const void *data)
 
 	for (i = 0; i < L_ARRAY_SIZE(bad_channels); i++)
 		test_uri_parse(&bad_channels[i]);
+}
+
+static void test_duplicate_in_uri(const void *data)
+{
+	unsigned int i;
+
+	for (i = 0; i < L_ARRAY_SIZE(duplicates); i++)
+		test_uri_parse(&duplicates[i]);
 }
 
 struct dpp_test_vector {
@@ -546,22 +577,25 @@ static void test_pkex_key_derivation(const void *user_data)
 	CHECK_FROM_STR(vector->v, tmp, 32);
 }
 
+static bool test_precheck(const void *data)
+{
+	return (l_getrandom_is_supported() &&
+		l_checksum_is_supported(L_CHECKSUM_SHA256, true));
+}
+
+#define add_test(name, func, data) l_test_add_data_func_precheck(name, data, \
+							func, test_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (l_checksum_is_supported(L_CHECKSUM_SHA256, true) &&
-						l_getrandom_is_supported()) {
-		l_test_add("DPP test responder-only key derivation",
-						test_key_derivation,
-						&responder_only_p256);
-		l_test_add("DPP test mutual key derivation",
-						test_key_derivation,
-						&mutual_p256);
-		l_test_add("DPP test PKEX key derivation",
-						test_pkex_key_derivation,
-						&pkex_vector);
-	}
+	add_test("DPP test responder-only key derivation", test_key_derivation,
+							&responder_only_p256);
+	add_test("DPP test mutual key derivation", test_key_derivation,
+							&mutual_p256);
+	add_test("DPP test PKEX key derivation", test_pkex_key_derivation,
+							&pkex_vector);
 
 	l_test_add("DPP URI parse", test_uri_parse, &all_values);
 	l_test_add("DPP URI no type", test_uri_parse, &no_type);
@@ -576,6 +610,7 @@ int main(int argc, char *argv[])
 	l_test_add("DPP URI bad key", test_uri_parse, &bad_key);
 	l_test_add("DPP URI bad channels", test_bad_channels, &bad_channels);
 	l_test_add("DPP URI unexpected ID", test_uri_parse, &unexpected_id);
+	l_test_add("DPP URI duplicates", test_duplicate_in_uri, &duplicates);
 
 	return l_test_run();
 }

@@ -113,19 +113,21 @@ static const struct prf_data test_case_3 = {
 			  "f7b4abd43d87f0a68f1cbd9e2b6f7607",
 };
 
+static bool test_precheck(const void *data)
+{
+	return l_checksum_is_supported(L_CHECKSUM_SHA1, true);
+}
+
+#define add_test(name, func, data) l_test_add_data_func_precheck(name, data, \
+							func, test_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_SHA1, true)) {
-		printf("SHA1 support missing, skipping...\n");
-		goto done;
-	}
+	add_test("/prf-sha1/Test case 1", prf_test, &test_case_1);
+	add_test("/prf-sha1/Test case 2", prf_test, &test_case_2);
+	add_test("/prf-sha1/Test case 3", prf_test, &test_case_3);
 
-	l_test_add("/prf-sha1/Test case 1", prf_test, &test_case_1);
-	l_test_add("/prf-sha1/Test case 2", prf_test, &test_case_2);
-	l_test_add("/prf-sha1/Test case 3", prf_test, &test_case_3);
-
-done:
 	return l_test_run();
 }

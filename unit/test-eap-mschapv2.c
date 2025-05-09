@@ -131,27 +131,23 @@ static void test_get_asym_key(const void *data)
 	assert(!memcmp(msk, m_session_key, sizeof(m_session_key)));
 }
 
+static bool test_precheck(const void *data)
+{
+	return l_checksum_is_supported(L_CHECKSUM_MD4, false);
+}
+
+#define add_test(name, func) l_test_add_func_precheck(name, func, \
+							test_precheck, 0)
 
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_MD4, false)) {
-		printf("MD4 support missing, skipping...\n");
-		goto done;
-	}
+	add_test("MSHAPv2 nt_password-hash", test_nt_password_hash);
+	add_test("MSHAPv2 generate_nt_response", test_generate_nt_response);
+	add_test("MSHAPv2 get_master_key", test_get_master_key);
+	add_test("MSHAPv2 get_asym_state_key", test_get_asym_key);
+	add_test("MSHAPv2 authenticator_response", test_authenticator_response);
 
-	l_test_add("MSHAPv2 nt_password-hash",
-			test_nt_password_hash, NULL);
-	l_test_add("MSHAPv2 generate_nt_response",
-			test_generate_nt_response, NULL);
-	l_test_add("MSHAPv2 get_master_key",
-			test_get_master_key, NULL);
-	l_test_add("MSHAPv2 get_asym_state_key",
-			test_get_asym_key, NULL);
-	l_test_add("MSHAPv2 authenticator_response",
-			test_authenticator_response, NULL);
-
-done:
 	return l_test_run();
 }

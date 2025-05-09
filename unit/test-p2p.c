@@ -341,7 +341,7 @@ static const struct p2p_probe_req_data p2p_probe_req_data_1 = {
 			.group_caps = 0,
 		},
 		.listen_channel = {
-			.country = "XX\x04",
+			.country = { 'X', 'X', '\x04' },
 			.oper_class = 81,
 			.channel_num = 1,
 		},

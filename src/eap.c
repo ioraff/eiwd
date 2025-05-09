@@ -425,8 +425,8 @@ static void eap_handle_response(struct eap_state *eap, const uint8_t *pkt,
 				size_t len)
 {
 	enum eap_type type;
-	uint32_t vendor_id;
-	uint32_t vendor_type;
+	uint32_t vendor_id = 0;
+	uint32_t vendor_type = 0;
 	enum eap_type our_type = eap->method->request_type;
 	uint32_t our_vendor_id = (eap->method->vendor_id[0] << 16) |
 				(eap->method->vendor_id[1] << 8) |

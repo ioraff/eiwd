@@ -68,6 +68,7 @@ unit/test-dpp
 unit/test-json
 unit/test-nl80211util
 unit/test-pmksa
+unit/test-storage
 unit/cert-*.pem
 unit/cert-*.csr
 unit/cert-*.srl

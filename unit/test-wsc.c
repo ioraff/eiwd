@@ -2574,6 +2574,39 @@ struct wsc_credential wsc_r_test_open_cred = {
 	.encryption_type = WSC_ENCRYPTION_TYPE_NONE,
 };
 
+static bool getrandom_precheck(const void *data)
+{
+	return l_getrandom_is_supported();
+}
+
+static bool aes_cbc_precheck(const void *data)
+{
+	return l_cipher_is_supported(L_CIPHER_AES_CBC);
+}
+
+static bool key_crypto_precheck(const void *data)
+{
+	return (l_key_is_supported(L_KEY_FEATURE_CRYPTO) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA256, true));
+}
+
+static bool key_dh_precheck(const void *data)
+{
+	return (l_key_is_supported(L_KEY_FEATURE_DH) &&
+		l_key_is_supported(L_KEY_FEATURE_CRYPTO) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA256, true));
+}
+
+#define add_aes_cbc_test(name, func, data) l_test_add_data_func_precheck(name, \
+							data, func, \
+							aes_cbc_precheck, 0)
+#define add_crypto_test(name, func, data) l_test_add_data_func_precheck(name, \
+							data, func, \
+							key_crypto_precheck, 0)
+#define add_dh_test(name, func, data) l_test_add_data_func_precheck(name, \
+							data, func, \
+							key_dh_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
@@ -2595,8 +2628,8 @@ int main(int argc, char *argv[])
 	l_test_add("/wsc/pin/valid pin", wsc_test_pin_valid, NULL);
 	l_test_add("/wsc/pin/valid checksum", wsc_test_pin_checksum, NULL);
 
-	if (l_getrandom_is_supported())
-		l_test_add("/wsc/pin/generate", wsc_test_pin_generate, NULL);
+	l_test_add_func_precheck("/wsc/pin/generate", wsc_test_pin_generate,
+							getrandom_precheck, 0);
 
 	l_test_add("/wsc/gen_uuid/1", wsc_test_uuid_from_addr,
 					&uuid_from_addr_data_1);
@@ -2607,96 +2640,77 @@ int main(int argc, char *argv[])
 	l_test_add("/wsc/build/m1 1", wsc_test_build_m1, &m1_data_1);
 	l_test_add("/wsc/build/m1 2", wsc_test_build_m1, &m1_data_2);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_SHA256, true)) {
-		printf("SHA256 support missing, skipping other tests...\n");
-		goto done;
-	}
+	add_dh_test("/wsc/parse/m2 1", wsc_test_parse_m2, &m2_data_1);
+	add_dh_test("/wsc/parse/m2 2", wsc_test_parse_m2, &m2_data_2);
 
-	if (!l_key_is_supported(L_KEY_FEATURE_CRYPTO)) {
-		printf("Key crypto not supported, skipping other tests...\n");
-		goto done;
-	}
+	add_crypto_test("/wsc/build/m2 1", wsc_test_build_m2, &m2_data_1);
 
-	if (l_key_is_supported(L_KEY_FEATURE_DH)) {
-		l_test_add("/wsc/parse/m2 1", wsc_test_parse_m2, &m2_data_1);
-		l_test_add("/wsc/parse/m2 2", wsc_test_parse_m2, &m2_data_2);
-	}
+	add_crypto_test("/wsc/parse/m3 1", wsc_test_parse_m3, &m3_data_1);
+	add_crypto_test("/wsc/build/m3 1", wsc_test_build_m3, &m3_data_1);
 
-	l_test_add("/wsc/build/m2 1", wsc_test_build_m2, &m2_data_1);
+	add_crypto_test("/wsc/parse/m4 1", wsc_test_parse_m4, &m4_data_1);
+	add_crypto_test("/wsc/build/m4 1", wsc_test_build_m4, &m4_data_1);
 
-	l_test_add("/wsc/parse/m3 1", wsc_test_parse_m3, &m3_data_1);
-	l_test_add("/wsc/build/m3 1", wsc_test_build_m3, &m3_data_1);
+	add_crypto_test("/wsc/parse/m4 encrypted settings 1",
+					wsc_test_parse_m4_encrypted_settings,
+					&m4_encrypted_settings_data_1);
+	add_crypto_test("/wsc/build/m4 encrypted settings 1",
+					wsc_test_build_m4_encrypted_settings,
+					&m4_encrypted_settings_data_1);
 
-	l_test_add("/wsc/parse/m4 1", wsc_test_parse_m4, &m4_data_1);
-	l_test_add("/wsc/build/m4 1", wsc_test_build_m4, &m4_data_1);
+	add_crypto_test("/wsc/parse/m5 1", wsc_test_parse_m5, &m5_data_1);
+	add_crypto_test("/wsc/build/m5 1", wsc_test_build_m5, &m5_data_1);
 
-	l_test_add("/wsc/parse/m4 encrypted settings 1",
-			wsc_test_parse_m4_encrypted_settings,
-			&m4_encrypted_settings_data_1);
-	l_test_add("/wsc/build/m4 encrypted settings 1",
-			wsc_test_build_m4_encrypted_settings,
-			&m4_encrypted_settings_data_1);
+	add_crypto_test("/wsc/parse/m6 1", wsc_test_parse_m6, &m6_data_1);
+	add_crypto_test("/wsc/build/m6 1", wsc_test_build_m6, &m6_data_1);
 
-	l_test_add("/wsc/parse/m5 1", wsc_test_parse_m5, &m5_data_1);
-	l_test_add("/wsc/build/m5 1", wsc_test_build_m5, &m5_data_1);
+	add_crypto_test("/wsc/parse/m6 encrypted settings 1",
+					wsc_test_parse_m6_encrypted_settings,
+					&m6_encrypted_settings_data_1);
+	add_crypto_test("/wsc/build/m6 encrypted settings 1",
+					wsc_test_build_m6_encrypted_settings,
+					&m6_encrypted_settings_data_1);
 
-	l_test_add("/wsc/parse/m6 1", wsc_test_parse_m6, &m6_data_1);
-	l_test_add("/wsc/build/m6 1", wsc_test_build_m6, &m6_data_1);
+	add_crypto_test("/wsc/parse/m7 1", wsc_test_parse_m7, &m7_data_1);
+	add_crypto_test("/wsc/build/m7 1", wsc_test_build_m7, &m7_data_1);
 
-	l_test_add("/wsc/parse/m6 encrypted settings 1",
-			wsc_test_parse_m6_encrypted_settings,
-			&m6_encrypted_settings_data_1);
-	l_test_add("/wsc/build/m6 encrypted settings 1",
-			wsc_test_build_m6_encrypted_settings,
-			&m6_encrypted_settings_data_1);
+	add_crypto_test("/wsc/parse/m8 1", wsc_test_parse_m8, &m8_data_1);
+	add_crypto_test("/wsc/build/m8 1", wsc_test_build_m8, &m8_data_1);
 
-	l_test_add("/wsc/parse/m7 1", wsc_test_parse_m7, &m7_data_1);
-	l_test_add("/wsc/build/m7 1", wsc_test_build_m7, &m7_data_1);
+	add_crypto_test("/wsc/parse/m8 encrypted settings 1",
+					wsc_test_parse_m8_encrypted_settings,
+					&m8_encrypted_settings_data_1);
+	add_crypto_test("/wsc/build/m8 encrypted settings 1",
+					wsc_test_build_m8_encrypted_settings,
+					&m8_encrypted_settings_data_1);
 
-	l_test_add("/wsc/parse/m8 1", wsc_test_parse_m8, &m8_data_1);
-	l_test_add("/wsc/build/m8 1", wsc_test_build_m8, &m8_data_1);
-
-	l_test_add("/wsc/parse/m8 encrypted settings 1",
-			wsc_test_parse_m8_encrypted_settings,
-			&m8_encrypted_settings_data_1);
-	l_test_add("/wsc/build/m8 encrypted settings 1",
-			wsc_test_build_m8_encrypted_settings,
-			&m8_encrypted_settings_data_1);
-
-	l_test_add("/wsc/parse/wsc_done 1", wsc_test_parse_wsc_done,
+	add_crypto_test("/wsc/parse/wsc_done 1", wsc_test_parse_wsc_done,
 							&wsc_done_data_1);
-	l_test_add("/wsc/build/wsc_done 1", wsc_test_build_wsc_done,
+	add_crypto_test("/wsc/build/wsc_done 1", wsc_test_build_wsc_done,
 							&wsc_done_data_1);
 
-	if (!l_key_is_supported(L_KEY_FEATURE_DH))
-		goto done;
-
-	l_test_add("/wsc/diffie-hellman/generate pubkey 1",
+	add_dh_test("/wsc/diffie-hellman/generate pubkey 1",
 					wsc_test_dh_generate_pubkey,
 					&dh_generate_pubkey_test_data_1);
-	l_test_add("/wsc/diffie-hellman/generate pubkey 2",
+	add_dh_test("/wsc/diffie-hellman/generate pubkey 2",
 					wsc_test_dh_generate_pubkey,
 					&dh_generate_pubkey_test_data_2);
 
-	if (!l_cipher_is_supported(L_CIPHER_AES_CBC))
-		goto done;
-
-	l_test_add("/wsc/handshake/PBC Handshake Test",
+	add_aes_cbc_test("/wsc/handshake/PBC Handshake Test",
 						wsc_test_pbc_handshake, NULL);
 
-	l_test_add("/wsc/retransmission/no fragmentation",
+	add_aes_cbc_test("/wsc/retransmission/no fragmentation",
 				wsc_test_retransmission_no_fragmentation, NULL);
 
-	l_test_add("/wsc-r/handshake/PBC Handshake WPA2 passphrase test",
-				wsc_r_test_pbc_handshake,
-				&wsc_r_test_wpa2_cred_passphrase);
-	l_test_add("/wsc-r/handshake/PBC Handshake WPA2 PSK test",
-				wsc_r_test_pbc_handshake,
-				&wsc_r_test_wpa2_cred_psk);
-	l_test_add("/wsc-r/handshake/PBC Handshake Open test",
-				wsc_r_test_pbc_handshake,
-				&wsc_r_test_open_cred);
+	add_aes_cbc_test("/wsc-r/handshake/PBC Handshake WPA2 passphrase test",
+					wsc_r_test_pbc_handshake,
+					&wsc_r_test_wpa2_cred_passphrase);
+	add_aes_cbc_test("/wsc-r/handshake/PBC Handshake WPA2 PSK test",
+					wsc_r_test_pbc_handshake,
+					&wsc_r_test_wpa2_cred_psk);
+	add_aes_cbc_test("/wsc-r/handshake/PBC Handshake Open test",
+					wsc_r_test_pbc_handshake,
+					&wsc_r_test_open_cred);
 
-done:
 	return l_test_run();
 }

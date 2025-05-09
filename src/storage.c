@@ -501,6 +501,13 @@ int __storage_decrypt(struct l_settings *settings, const char *ssid,
 	}
 
 	/*
+	 * It should likely be far larger than this, but that will get caught
+	 * later when reloading the decrypted data.
+	 */
+	if (elen < 16)
+		return -EBADMSG;
+
+	/*
 	 * AES-SIV automatically verifies the IV (16 bytes) and returns only
 	 * the decrypted data portion. We add one here for the NULL terminator
 	 * since this is always going to be textual data after decryption.

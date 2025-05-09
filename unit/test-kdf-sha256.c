@@ -81,17 +81,19 @@ static const struct kdf_data test_case_1 = {
 			  "84f7d2291143d4d4",
 };
 
+static bool test_precheck(const void *data)
+{
+	return l_checksum_is_supported(L_CHECKSUM_SHA256, true);
+}
+
+#define add_test(name, func, data) l_test_add_data_func_precheck(name, data, \
+							func, test_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_SHA256, true)) {
-		printf("SHA256 support missing, skipping...\n");
-		goto done;
-	}
+	add_test("/kdf-sha256/Test case 1", kdf_test, &test_case_1);
 
-	l_test_add("/kdf-sha256/Test case 1", kdf_test, &test_case_1);
-
-done:
 	return l_test_run();
 }

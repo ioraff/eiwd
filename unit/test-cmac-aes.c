@@ -138,20 +138,22 @@ static const struct cmac_data example_4 = {
 	.tag_len	= sizeof(tag_4),
 };
 
+static bool test_precheck(const void *data)
+{
+	return l_checksum_cmac_aes_supported();
+}
+
+#define add_test(name, func, data) l_test_add_data_func_precheck(name, data, \
+							func, test_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
 
-	if (!l_checksum_cmac_aes_supported()) {
-		printf("AES-CMAC support missing, skipping...\n");
-		goto done;
-	}
+	add_test("/cmac-aes/Example 1", cmac_test, &example_1);
+	add_test("/cmac-aes/Example 2", cmac_test, &example_2);
+	add_test("/cmac-aes/Example 3", cmac_test, &example_3);
+	add_test("/cmac-aes/Example 4", cmac_test, &example_4);
 
-	l_test_add("/cmac-aes/Example 1", cmac_test, &example_1);
-	l_test_add("/cmac-aes/Example 2", cmac_test, &example_2);
-	l_test_add("/cmac-aes/Example 3", cmac_test, &example_3);
-	l_test_add("/cmac-aes/Example 4", cmac_test, &example_4);
-
-done:
 	return l_test_run();
 }

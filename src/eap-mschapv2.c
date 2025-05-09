@@ -544,7 +544,8 @@ static bool eap_mschapv2_load_settings(struct eap_state *eap,
 	return true;
 
 error:
-	free(state);
+	l_free(state->user);
+	l_free(state);
 	return false;
 }
 

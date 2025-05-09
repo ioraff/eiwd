@@ -1166,21 +1166,34 @@ struct dpp_uri_info *dpp_parse_uri(const char *uri)
 
 		switch (*pos) {
 		case 'C':
+			if (L_WARN_ON(info->freqs))
+				goto free_info;
+
 			info->freqs = dpp_parse_class_and_channel(pos + 2, len);
 			if (!info->freqs)
 				goto free_info;
 			break;
 		case 'M':
+			if (L_WARN_ON(!l_memeqzero(info->mac,
+							sizeof(info->mac))))
+				goto free_info;
+
 			ret = dpp_parse_mac(pos + 2, len, info->mac);
 			if (ret < 0)
 				goto free_info;
 			break;
 		case 'V':
+			if (L_WARN_ON(info->version != 0))
+				goto free_info;
+
 			ret = dpp_parse_version(pos + 2, len, &info->version);
 			if (ret < 0)
 				goto free_info;
 			break;
 		case 'K':
+			if (L_WARN_ON(info->boot_public))
+				goto free_info;
+
 			info->boot_public = dpp_parse_key(pos + 2, len);
 			if (!info->boot_public)
 				goto free_info;

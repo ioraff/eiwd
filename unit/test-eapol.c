@@ -3908,6 +3908,38 @@ static void eapol_ap_sta_handshake_ip_alloc_no_req_test(const void *data)
 #define _IS_ENABLED2(one_or_two_args) _IS_ENABLED3(one_or_two_args true, false)
 #define _IS_ENABLED3(ignore_this, val, ...) val
 
+static bool hash_precheck(const void *data)
+{
+	return (l_checksum_is_supported(L_CHECKSUM_MD5, true) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA1, true));
+}
+
+static bool aes_precheck(const void *data)
+{
+	return (l_cipher_is_supported(L_CIPHER_AES) &&
+		l_checksum_is_supported(L_CHECKSUM_MD5, true) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA1, true));
+}
+
+static bool pkcs8_precheck(const void *data)
+{
+	return (IS_ENABLED(HAVE_PKCS8_SUPPORT) &&
+		l_cipher_is_supported(L_CIPHER_AES) &&
+		l_cipher_is_supported(L_CIPHER_AES_CBC) &&
+		l_cipher_is_supported(L_CIPHER_DES3_EDE_CBC) &&
+		l_checksum_is_supported(L_CHECKSUM_MD5, true) &&
+		l_checksum_is_supported(L_CHECKSUM_SHA1, true) &&
+		l_key_is_supported(L_KEY_FEATURE_CRYPTO) &&
+		l_key_is_supported(L_KEY_FEATURE_RESTRICT));
+}
+
+#define add_hash_test(name, func, data) l_test_add_data_func_precheck(name, \
+						data, func, hash_precheck, 0)
+#define add_aes_test(name, func, data) l_test_add_data_func_precheck(name, \
+						data, func, aes_precheck, 0)
+#define add_pkcs8_test(name, func, data) l_test_add_data_func_precheck(name, \
+						data, func, pkcs8_precheck, 0)
+
 int main(int argc, char *argv[])
 {
 	l_test_init(&argc, &argv);
@@ -3977,80 +4009,55 @@ int main(int argc, char *argv[])
 	l_test_add("/EAPoL Key/Key Frame 32",
 			eapol_key_test, &eapol_key_test_32);
 
-	if (!l_checksum_is_supported(L_CHECKSUM_MD5, true) ||
-			!l_checksum_is_supported(L_CHECKSUM_SHA1, true))
-		goto done;
-
-	l_test_add("/EAPoL Key/MIC Test 1",
+	add_hash_test("/EAPoL Key/MIC Test 1",
 			eapol_key_mic_test, &eapol_key_mic_test_1);
-	l_test_add("/EAPoL Key/MIC Test 2",
+	add_hash_test("/EAPoL Key/MIC Test 2",
 			eapol_key_mic_test, &eapol_key_mic_test_2);
-
-	l_test_add("/EAPoL Key/Calculate MIC Test 1",
+	add_hash_test("/EAPoL Key/Calculate MIC Test 1",
 			eapol_calculate_mic_test, &eapol_calculate_mic_test_1);
 
-	if (!l_cipher_is_supported(L_CIPHER_AES))
-		goto done;
+	add_aes_test("EAPoL/WPA2 4-Way Handshake",
+				eapol_4way_test, NULL);
+	add_aes_test("EAPoL/WPA2 4-Way & GTK Handshake",
+				eapol_wpa2_handshake_test, NULL);
+	add_aes_test("EAPoL/WPA 4-Way & GTK Handshake",
+				eapol_wpa_handshake_test, NULL);
+	add_aes_test("EAPoL/WPA2 PTK State Machine",
+				eapol_sm_test_ptk, NULL);
+	add_aes_test("EAPoL IGTK & 4-Way Handshake",
+				eapol_sm_test_igtk, NULL);
+	add_aes_test("EAPoL/WPA2 PTK & GTK State Machine",
+				eapol_sm_test_wpa2_ptk_gtk, NULL);
+	add_aes_test("EAPoL/WPA PTK & GTK State Machine Test 1",
+				eapol_sm_test_wpa_ptk_gtk, NULL);
+	add_aes_test("EAPoL/WPA PTK & GTK State Machine Test 2",
+				eapol_sm_test_wpa_ptk_gtk_2, NULL);
+	add_aes_test("EAPoL/WPA2 Retransmit Test",
+				eapol_sm_wpa2_retransmit_test, NULL);
 
-	l_test_add("EAPoL/WPA2 4-Way Handshake",
-			&eapol_4way_test, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP-TLS & 4-Way Handshake",
+				eapol_sm_test_eap_tls, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP-TTLS+EAP-MD5 & 4-Way Handshake",
+				eapol_sm_test_eap_ttls_md5, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP NAK",
+				eapol_sm_test_eap_nak, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP-TLS subject name match",
+				eapol_sm_test_eap_tls_subject_good, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP-TLS subject name mismatch",
+				eapol_sm_test_eap_tls_subject_bad, NULL);
+	add_pkcs8_test("EAPoL/8021x EAP-TLS embedded certs",
+				eapol_sm_test_eap_tls_embedded, NULL);
 
-	l_test_add("EAPoL/WPA2 4-Way & GTK Handshake",
-			&eapol_wpa2_handshake_test, NULL);
+	add_aes_test("EAPoL/FT-Using-PSK 4-Way Handshake",
+			eapol_ft_handshake_test, NULL);
+	add_aes_test("EAPoL/Supplicant+Authenticator 4-Way Handshake",
+			eapol_ap_sta_handshake_test, NULL);
+	add_aes_test("EAPoL/Supplicant+Authenticator 4-Way Handshake Bad PSK",
+			eapol_ap_sta_handshake_bad_psk_test, NULL);
+	add_aes_test("EAPoL/Supplicant+Authenticator IP Allocation OK",
+			eapol_ap_sta_handshake_ip_alloc_ok_test, NULL);
+	add_aes_test("EAPoL/Supplicant+Authenticator IP Allocation no request",
+			eapol_ap_sta_handshake_ip_alloc_no_req_test, NULL);
 
-	l_test_add("EAPoL/WPA 4-Way & GTK Handshake",
-			&eapol_wpa_handshake_test, NULL);
-
-	l_test_add("EAPoL/WPA2 PTK State Machine", &eapol_sm_test_ptk, NULL);
-
-	l_test_add("EAPoL IGTK & 4-Way Handshake",
-			&eapol_sm_test_igtk, NULL);
-
-	l_test_add("EAPoL/WPA2 PTK & GTK State Machine",
-			&eapol_sm_test_wpa2_ptk_gtk, NULL);
-
-	l_test_add("EAPoL/WPA PTK & GTK State Machine Test 1",
-			&eapol_sm_test_wpa_ptk_gtk, NULL);
-
-	l_test_add("EAPoL/WPA PTK & GTK State Machine Test 2",
-			&eapol_sm_test_wpa_ptk_gtk_2, NULL);
-
-	l_test_add("EAPoL/WPA2 Retransmit Test",
-			&eapol_sm_wpa2_retransmit_test, NULL);
-
-	if (IS_ENABLED(HAVE_PKCS8_SUPPORT) &&
-			l_cipher_is_supported(L_CIPHER_DES3_EDE_CBC) &&
-			l_cipher_is_supported(L_CIPHER_AES_CBC) &&
-			l_key_is_supported(L_KEY_FEATURE_RESTRICT |
-						L_KEY_FEATURE_CRYPTO)) {
-		l_test_add("EAPoL/8021x EAP-TLS & 4-Way Handshake",
-					&eapol_sm_test_eap_tls, NULL);
-
-		l_test_add("EAPoL/8021x EAP-TTLS+EAP-MD5 & 4-Way Handshake",
-					&eapol_sm_test_eap_ttls_md5, NULL);
-		l_test_add("EAPoL/8021x EAP NAK",
-				&eapol_sm_test_eap_nak, NULL);
-
-		l_test_add("EAPoL/8021x EAP-TLS subject name match",
-				&eapol_sm_test_eap_tls_subject_good, NULL);
-		l_test_add("EAPoL/8021x EAP-TLS subject name mismatch",
-				&eapol_sm_test_eap_tls_subject_bad, NULL);
-		l_test_add("EAPoL/8021x EAP-TLS embedded certs",
-				&eapol_sm_test_eap_tls_embedded, NULL);
-	}
-
-	l_test_add("EAPoL/FT-Using-PSK 4-Way Handshake",
-			&eapol_ft_handshake_test, NULL);
-
-	l_test_add("EAPoL/Supplicant+Authenticator 4-Way Handshake",
-			&eapol_ap_sta_handshake_test, NULL);
-	l_test_add("EAPoL/Supplicant+Authenticator 4-Way Handshake Bad PSK",
-			&eapol_ap_sta_handshake_bad_psk_test, NULL);
-	l_test_add("EAPoL/Supplicant+Authenticator IP Allocation OK",
-			&eapol_ap_sta_handshake_ip_alloc_ok_test, NULL);
-	l_test_add("EAPoL/Supplicant+Authenticator IP Allocation no request",
-			&eapol_ap_sta_handshake_ip_alloc_no_req_test, NULL);
-
-done:
 	return l_test_run();
 }

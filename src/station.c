@@ -4845,7 +4845,7 @@ static struct l_dbus_message *station_property_set_affinities(
 	struct l_dbus_message_iter array;
 	const char *sender = l_dbus_message_get_sender(message);
 	char *old_path = l_queue_peek_head(station->affinities);
-	const char *new_path = NULL;
+	const char *new_path;
 	struct scan_bss *new_bss = NULL;
 	struct scan_bss *old_bss = NULL;
 	bool lower_threshold = false;
@@ -4865,10 +4865,15 @@ static struct l_dbus_message *station_property_set_affinities(
 	if (!l_dbus_message_iter_get_variant(new_value, "ao", &array))
 		return dbus_error_invalid_args(message);
 
-	/* Get first entry, there should be only one */
-	l_dbus_message_iter_next_entry(&array, &new_path);
+	/* Get first entry, or if an empty array set the path to NULL */
+	if (!l_dbus_message_iter_next_entry(&array, &new_path))
+		new_path = NULL;
 
-	if (l_dbus_message_iter_next_entry(&array, &new_path))
+	/*
+	 * Only allowing single values for now. If there is more than a single
+	 * value, fail
+	 */
+	if (new_path && l_dbus_message_iter_next_entry(&array, &new_path))
 		return dbus_error_invalid_args(message);
 
 	old_path = l_queue_peek_head(station->affinities);
