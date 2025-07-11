@@ -112,8 +112,8 @@ class AsyncOpAbstract(object):
         self._is_completed = True
         self._exception = _convert_dbus_ex(ex)
 
-    def _wait_for_async_op(self):
-        ctx.non_block_wait(lambda s: s._is_completed, 30, self, exception=None)
+    def _wait_for_async_op(self, timeout=50):
+        ctx.non_block_wait(lambda s: s._is_completed, timeout, self, exception=None)
 
         self._is_completed = False
         if self._exception is not None:
@@ -280,8 +280,15 @@ class StationDebug(IWDDBusAbstract):
     def autoconnect(self):
         return self._properties['AutoConnect']
 
-    def connect_bssid(self, address):
-        self._iface.ConnectBssid(dbus.ByteArray.fromhex(address.replace(':', '')))
+    def connect_bssid(self, address, wait=True):
+        self._iface.ConnectBssid(
+            dbus.ByteArray.fromhex(address.replace(':', '')),
+            reply_handler=self._success,
+            error_handler=self._failure
+        )
+
+        if wait:
+            self._wait_for_async_op()
 
     def roam(self, address):
         self._iface.Roam(dbus.ByteArray.fromhex(address.replace(':', '')))
@@ -870,8 +877,8 @@ class Device(IWDDBusAbstract):
     def stop_adhoc(self):
         self._prop_proxy.Set(IWD_DEVICE_INTERFACE, 'Mode', 'station')
 
-    def connect_bssid(self, address):
-        self._station_debug.connect_bssid(address)
+    def connect_bssid(self, address, wait=True):
+        self._station_debug.connect_bssid(address, wait=wait)
 
     def roam(self, address):
         self._station_debug.roam(address)
@@ -999,7 +1006,7 @@ class Network(IWDDBusAbstract):
     def extended_service_set(self):
         return self._properties['ExtendedServiceSet']
 
-    def connect(self, wait=True):
+    def connect(self, wait=True, timeout=50, reply_handler=None, error_handler=None):
         '''
             Connect to the network. Request the device implied by the object
             path to connect to specified network.
@@ -1014,12 +1021,19 @@ class Network(IWDDBusAbstract):
             @rtype: void
         '''
 
+        if not reply_handler:
+            reply_handler = self._success
+
+        if not error_handler:
+            error_handler = self._failure
+
         self._iface.Connect(dbus_interface=self._iface_name,
-                            reply_handler=self._success,
-                            error_handler=self._failure)
+                            reply_handler=reply_handler,
+                            error_handler=error_handler,
+                            timeout=timeout)
 
         if wait:
-            self._wait_for_async_op()
+            self._wait_for_async_op(timeout=timeout)
 
     def __str__(self, prefix = ''):
         return prefix + 'Network:\n' \

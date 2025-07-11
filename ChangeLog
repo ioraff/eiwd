@@ -1,3 +1,9 @@
+ver 3.9:
+	Fix issue with Access Point mode and frequency unlocking.
+	Fix issue with network configuration and BSS retry logic.
+	Fix issue with handling busy notification from Access Point.
+	Fix issue with handling P-192, P-224 and P-521 for SAE.
+
 ver 3.8:
 	Fix issue with handling unit tests and missing kernel features.
 

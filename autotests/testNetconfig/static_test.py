@@ -91,16 +91,11 @@ class Test(unittest.TestCase):
         # using the same static config.  The new client's ACD client should
         # detect an IP conflict and not allow the device to reach the
         # "connected" state although the DBus .Connect call will succeed.
-        ordered_network.network_object.connect()
-        self.assertEqual(dev2.state, iwd.DeviceState.connecting)
-        try:
-            # We should either stay in "connecting" indefinitely or move to
-            # "disconnecting"
-            condition = 'obj.state != DeviceState.connecting'
-            iwd_ns0_1.wait_for_object_condition(dev2, condition, max_wait=21)
-            self.assertEqual(dev2.state, iwd.DeviceState.disconnecting)
-        except TimeoutError:
-            dev2.disconnect()
+        with self.assertRaises(iwd.FailedEx):
+            ordered_network.network_object.connect(timeout=500)
+
+        condition = 'obj.state == DeviceState.disconnected'
+        iwd_ns0_1.wait_for_object_condition(dev2, condition, max_wait=21)
 
         iwd_ns0_1.unregister_psk_agent(psk_agent_ns0_1)
         del dev2

@@ -27,12 +27,14 @@ enum blacklist_reason {
 	 */
 	BLACKLIST_REASON_CONNECT_FAILED,
 	/*
-	 * This type of blacklist is added when a BSS requests IWD roams
-	 * elsewhere. This is to aid in preventing IWD from roaming/connecting
-	 * back to that BSS in the future unless there are no other "good"
-	 * candidates to connect to.
+	 * This type of blacklist is added when an AP indicates that its unable
+	 * to handle more connections. This is done via BSS-TM requests or
+	 * denied authentications/associations with certain status codes.
+	 *
+	 * Once this type of blacklist is applied to a BSS IWD will attempt to
+	 * avoid roaming to it for a configured period of time.
 	 */
-	BLACKLIST_REASON_ROAM_REQUESTED,
+	BLACKLIST_REASON_AP_BUSY,
 };
 
 void blacklist_add_bss(const uint8_t *addr, enum blacklist_reason reason);

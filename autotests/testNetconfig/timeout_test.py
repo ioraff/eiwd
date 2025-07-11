@@ -8,6 +8,8 @@ from iwd import PSKAgent
 from iwd import NetworkType
 
 class Test(unittest.TestCase):
+    def connect_failure(self, ex):
+        self.failure_triggered = True
 
     def test_netconfig_timeout(self):
         IWD.copy_to_storage('autoconnect.psk', name='ap-ns1.psk')
@@ -27,23 +29,34 @@ class Test(unittest.TestCase):
         condition = 'not obj.connected'
         wd.wait_for_object_condition(ordered_network.network_object, condition)
 
-        ordered_network.network_object.connect()
+        self.failure_triggered = False
 
-        condition = 'obj.state == DeviceState.connecting'
+        # Set our error handler here so we can check if it fails
+        ordered_network.network_object.connect(
+            wait=False,
+            timeout=1000,
+            error_handler=self.connect_failure
+        )
+
+        # IWD should attempt to try both BSS's with both failing netconfig.
+        # Then the autoconnect list should be exhausted, and IWD should
+        # transition to a disconnected state, then proceed to full autoconnect.
+        device.wait_for_event("netconfig-failed", timeout=1000)
+        device.wait_for_event("netconfig-failed", timeout=1000)
+        device.wait_for_event("disconnected")
+
+        device.wait_for_event("autoconnect_full")
+
+        # The connect call should have failed
+        self.assertTrue(self.failure_triggered)
+
+        condition = "obj.scanning"
+        wd.wait_for_object_condition(device, condition)
+        condition = "not obj.scanning"
         wd.wait_for_object_condition(device, condition)
 
-        device.wait_for_event("connecting (netconfig)")
-
-        # Netconfig should fail, and IWD should disconnect
-        from_condition = 'obj.state == DeviceState.connecting'
-        to_condition = 'obj.state == DeviceState.disconnecting'
-        wd.wait_for_object_change(device, from_condition, to_condition, max_wait=60)
-
-        # Autoconnect should then try again
-        condition = 'obj.state == DeviceState.connecting'
-        wd.wait_for_object_condition(device, condition)
-
-        device.wait_for_event("connecting (netconfig)")
+        # IWD should attempt to connect, but it will of course fail again.
+        device.wait_for_event("netconfig-failed", timeout=1000)
 
         device.disconnect()
         condition = 'obj.state == DeviceState.disconnected'

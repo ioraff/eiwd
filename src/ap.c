@@ -109,6 +109,8 @@ struct ap_state {
 	struct l_timeout *rekey_timeout;
 	unsigned int rekey_time;
 
+	uint32_t pre_scan_cmd_id;
+
 	bool started : 1;
 	bool gtk_set : 1;
 	bool netconfig_set_addr4 : 1;
@@ -353,6 +355,12 @@ static void ap_reset(struct ap_state *ap)
 	if (ap->rekey_timeout) {
 		l_timeout_remove(ap->rekey_timeout);
 		ap->rekey_timeout = NULL;
+	}
+
+	if (ap->pre_scan_cmd_id) {
+		scan_cancel(netdev_get_wdev_id(ap->netdev),
+				ap->pre_scan_cmd_id);
+		ap->pre_scan_cmd_id = 0;
 	}
 }
 
@@ -3852,6 +3860,70 @@ static int ap_load_config(struct ap_state *ap, const struct l_settings *config,
 	return 0;
 }
 
+static void ap_pre_scan_trigger(int err, void *user_data)
+{
+	struct ap_state *ap = user_data;
+
+	if (err < 0) {
+		l_error("AP pre-scan failed: %i", err);
+		ap_start_failed(ap, err);
+		return;
+	}
+}
+
+static bool ap_check_channel(struct ap_state *ap)
+{
+	const struct band_freq_attrs *freq_attr;
+
+	freq_attr = wiphy_get_frequency_info(netdev_get_wiphy(ap->netdev),
+				band_channel_to_freq(ap->channel, ap->band));
+	if (L_WARN_ON(!freq_attr))
+		return false;
+
+	/* Check if disabled/no-IR */
+	if (freq_attr->disabled || freq_attr->no_ir)
+		return false;
+
+	return true;
+}
+
+static bool ap_pre_scan_notify(int err, struct l_queue *bss_list,
+				const struct scan_freq_set *freqs,
+				void *user_data)
+{
+	struct ap_state *ap = user_data;
+
+	if (!ap_check_channel(ap)) {
+		l_error("Unable to channel %u even after pre-scan",
+			ap->channel);
+		goto error;
+	}
+
+	if (ap_start_send(ap))
+		return false;
+
+error:
+	ap_start_failed(ap, -ENOTSUP);
+	return false;
+}
+
+static void ap_pre_scan_destroy(void *user_data)
+{
+	struct ap_state *ap = user_data;
+
+	ap->pre_scan_cmd_id = 0;
+}
+
+static bool ap_pre_scan(struct ap_state *ap)
+{
+	ap->pre_scan_cmd_id = scan_passive(netdev_get_wdev_id(ap->netdev),
+						NULL, ap_pre_scan_trigger,
+						ap_pre_scan_notify,
+						ap, ap_pre_scan_destroy);
+
+	return ap->pre_scan_cmd_id != 0;
+}
+
 /*
  * Start a simple independent WPA2 AP on given netdev.
  *
@@ -3960,6 +4032,20 @@ struct ap_state *ap_start(struct netdev *netdev, struct l_settings *config,
 		}
 
 		return ap;
+	}
+
+	if (!ap_check_channel(ap)) {
+		l_debug("Channel %u is disabled/no-IR, pre-scanning",
+			ap->channel);
+
+		if (ap_pre_scan(ap)) {
+			if (err_out)
+				*err_out = 0;
+
+			return ap;
+		}
+
+		goto error;
 	}
 
 	if (ap_start_send(ap)) {

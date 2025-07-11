@@ -45,7 +45,7 @@
 
 static uint64_t blacklist_multiplier;
 static uint64_t blacklist_initial_timeout;
-static uint64_t blacklist_roam_initial_timeout;
+static uint64_t blacklist_ap_busy_initial_timeout;
 static uint64_t blacklist_max_timeout;
 
 struct blacklist_entry {
@@ -67,8 +67,8 @@ static uint64_t get_reason_timeout(enum blacklist_reason reason)
 	switch (reason) {
 	case BLACKLIST_REASON_CONNECT_FAILED:
 		return blacklist_initial_timeout;
-	case BLACKLIST_REASON_ROAM_REQUESTED:
-		return blacklist_roam_initial_timeout;
+	case BLACKLIST_REASON_AP_BUSY:
+		return blacklist_ap_busy_initial_timeout;
 	default:
 		l_warn("Unhandled blacklist reason: %u", reason);
 		return 0;
@@ -218,11 +218,19 @@ static int blacklist_init(void)
 
 	if (!l_settings_get_uint64(config, "Blacklist",
 					"InitialRoamRequestedTimeout",
-					&blacklist_roam_initial_timeout))
-		blacklist_roam_initial_timeout = BLACKLIST_DEFAULT_TIMEOUT;
+					&blacklist_ap_busy_initial_timeout))
+		blacklist_ap_busy_initial_timeout = BLACKLIST_DEFAULT_TIMEOUT;
+	else
+		l_warn("[Blacklist].InitialRoamRequestedTimeout is deprecated, "
+			"use [Blacklist].InitialAccessPointBusyTimeout");
+
+	if (!l_settings_get_uint64(config, "Blacklist",
+					"InitialAccessPointBusyTimeout",
+					&blacklist_ap_busy_initial_timeout))
+		blacklist_ap_busy_initial_timeout = BLACKLIST_DEFAULT_TIMEOUT;
 
 	/* For easier user configuration the timeout values are in seconds */
-	blacklist_roam_initial_timeout *= L_USEC_PER_SEC;
+	blacklist_ap_busy_initial_timeout *= L_USEC_PER_SEC;
 
 	if (!l_settings_get_uint64(config, "Blacklist",
 					"Multiplier",

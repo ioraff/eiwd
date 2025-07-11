@@ -5451,6 +5451,39 @@ static void netdev_michael_mic_failure(struct l_genl_msg *msg,
 	l_debug("ifindex=%u key_idx=%u type=%u", netdev->index, idx, type);
 }
 
+#define MAX_COMEBACK_DELAY 1200
+
+static void netdev_assoc_comeback(struct l_genl_msg *msg,
+					struct netdev *netdev)
+{
+	const uint8_t *mac;
+	uint32_t timeout;
+
+	if (L_WARN_ON(!netdev->connected))
+		return;
+
+	if (nl80211_parse_attrs(msg, NL80211_ATTR_MAC, &mac,
+				NL80211_ATTR_TIMEOUT, &timeout,
+				NL80211_ATTR_UNSPEC) < 0)
+		return;
+
+	if (L_WARN_ON(memcmp(mac, netdev->handshake->aa, ETH_ALEN)))
+		return;
+
+	if (timeout <= MAX_COMEBACK_DELAY) {
+		l_debug(MAC" requested an association comeback delay of %u TU",
+			MAC_STR(netdev->handshake->aa), timeout);
+		return;
+	}
+
+	l_debug("Comeback delay of %u exceeded maximum of %u, deauthenticating",
+		timeout, MAX_COMEBACK_DELAY);
+
+	netdev_deauth_and_fail_connection(netdev,
+					NETDEV_RESULT_ASSOCIATION_FAILED,
+					MMPDU_STATUS_CODE_REFUSED_TEMPORARILY);
+}
+
 static void netdev_mlme_notify(struct l_genl_msg *msg, void *user_data)
 {
 	struct netdev *netdev = NULL;
@@ -5503,6 +5536,9 @@ static void netdev_mlme_notify(struct l_genl_msg *msg, void *user_data)
 		break;
 	case NL80211_CMD_MICHAEL_MIC_FAILURE:
 		netdev_michael_mic_failure(msg, netdev);
+		break;
+	case NL80211_CMD_ASSOC_COMEBACK:
+		netdev_assoc_comeback(msg, netdev);
 		break;
 	}
 }

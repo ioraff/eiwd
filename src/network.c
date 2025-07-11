@@ -168,6 +168,11 @@ static bool network_secret_check_cacheable(void *data, void *user_data)
 	return false;
 }
 
+void network_clear_blacklist(struct network *network)
+{
+	l_queue_clear(network->blacklist, NULL);
+}
+
 void network_connected(struct network *network)
 {
 	enum security security = network_get_security(network);
@@ -198,8 +203,6 @@ void network_connected(struct network *network)
 	l_queue_foreach_remove(network->secrets,
 				network_secret_check_cacheable, network);
 
-	l_queue_clear(network->blacklist, NULL);
-
 	network->provisioning_hidden = false;
 }
 
@@ -207,7 +210,7 @@ void network_disconnected(struct network *network)
 {
 	network_settings_close(network);
 
-	l_queue_clear(network->blacklist, NULL);
+	network_clear_blacklist(network);
 
 	if (network->provisioning_hidden)
 		station_hide_network(network->station, network);

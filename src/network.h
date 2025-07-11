@@ -74,6 +74,7 @@ bool network_bss_update(struct network *network, struct scan_bss *bss);
 const char *network_bss_get_path(const struct network *network,
 						const struct scan_bss *bss);
 bool network_bss_list_isempty(struct network *network);
+void network_clear_blacklist(struct network *network);
 
 const char *__network_path_append_bss(const char *network_path,
 					const struct scan_bss *bss);

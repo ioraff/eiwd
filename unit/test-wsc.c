@@ -2581,7 +2581,8 @@ static bool getrandom_precheck(const void *data)
 
 static bool aes_cbc_precheck(const void *data)
 {
-	return l_cipher_is_supported(L_CIPHER_AES_CBC);
+	return (l_key_is_supported(L_KEY_FEATURE_DH) &&
+		l_cipher_is_supported(L_CIPHER_AES_CBC));
 }
 
 static bool key_crypto_precheck(const void *data)

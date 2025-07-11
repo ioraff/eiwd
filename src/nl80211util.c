@@ -190,6 +190,7 @@ static attr_handler handler_for_nl80211(int type)
 	case NL80211_ATTR_CENTER_FREQ2:
 	case NL80211_ATTR_AKM_SUITES:
 	case NL80211_ATTR_EXTERNAL_AUTH_ACTION:
+	case NL80211_ATTR_TIMEOUT:
 		return extract_uint32;
 	case NL80211_ATTR_FRAME:
 		return extract_iovec;

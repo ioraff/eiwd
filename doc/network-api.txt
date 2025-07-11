@@ -11,6 +11,12 @@ Methods		void Connect()
 			the object path to connect to specified network.
 			Connecting to WEP networks is not supported.
 
+			Note: When [General].EnableNetworkConfiguration is set
+			to true a call to Connect() has the potential to take
+			a significant amount of time. Specifically if DHCP is
+			either slow, or is unable to complete. The timeout for
+			DHCP is roughly 30 seconds per BSS.
+
 			Possible errors: net.connman.iwd.Aborted
 					 net.connman.iwd.Busy
 					 net.connman.iwd.Failed

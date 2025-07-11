@@ -191,8 +191,7 @@ static uint32_t evaluate_bss_group_rank(const uint8_t *addr, uint32_t freq,
 	if (blacklist_contains_bss(addr, BLACKLIST_REASON_CONNECT_FAILED))
 		return 0;
 
-	roam_blacklist = blacklist_contains_bss(addr,
-					BLACKLIST_REASON_ROAM_REQUESTED);
+	roam_blacklist = blacklist_contains_bss(addr, BLACKLIST_REASON_AP_BUSY);
 	good_signal = signal >= netdev_get_low_signal_threshold(freq);
 
 	if (good_signal)
@@ -1804,7 +1803,15 @@ static void station_enter_state(struct station *station,
 		periodic_scan_stop(station);
 		break;
 	case STATION_STATE_CONNECTED:
+		network_clear_blacklist(station->connected_network);
 #ifdef HAVE_DBUS
+		if (station->connect_pending) {
+			struct l_dbus_message *reply =
+				l_dbus_message_new_method_return(
+						station->connect_pending);
+			dbus_pending_reply(&station->connect_pending, reply);
+		}
+
 		l_dbus_object_add_interface(dbus,
 					netdev_get_path(station->netdev),
 					IWD_STATION_DIAGNOSTIC_INTERFACE,
@@ -2231,6 +2238,26 @@ static void station_early_neighbor_report_cb(struct netdev *netdev, int err,
 				&station->roam_freqs);
 }
 
+static bool station_try_next_bss(struct station *station)
+{
+	struct scan_bss *next;
+	int ret;
+
+	next = network_bss_select(station->connected_network, false);
+
+	if (!next)
+		return false;
+
+	ret = __station_connect_network(station, station->connected_network,
+						next, station->state);
+	if (ret < 0)
+		return false;
+
+	l_debug("Attempting to connect to next BSS "MAC, MAC_STR(next->addr));
+
+	return true;
+}
+
 static bool station_can_fast_transition(struct station *station,
 					struct handshake_state *hs,
 					struct scan_bss *bss)
@@ -2273,28 +2300,26 @@ static bool station_can_fast_transition(struct station *station,
 	return true;
 }
 
-static void station_disconnect_on_error_cb(struct netdev *netdev, bool success,
-					void *user_data)
+static void station_disconnect_on_netconfig_failed(struct netdev *netdev,
+							bool success,
+							void *user_data)
 {
 	struct station *station = user_data;
-	bool continue_autoconnect;
 
-	station_enter_state(station, STATION_STATE_DISCONNECTED);
-
-	continue_autoconnect = station->state == STATION_STATE_CONNECTING_AUTO;
-
-	if (continue_autoconnect) {
-		if (station_autoconnect_next(station) < 0) {
-			l_debug("Nothing left on autoconnect list");
-			station_enter_state(station,
-					STATION_STATE_AUTOCONNECT_FULL);
-		}
-
+	if (station_try_next_bss(station))
 		return;
+
+	if (station->connect_pending) {
+		struct l_dbus_message *reply = dbus_error_failed(
+						station->connect_pending);
+
+		dbus_pending_reply(&station->connect_pending, reply);
 	}
 
-	if (station->autoconnect)
-		station_enter_state(station, STATION_STATE_AUTOCONNECT_QUICK);
+	station_reset_connection_state(station);
+
+	station_enter_state(station, STATION_STATE_DISCONNECTED);
+	station_enter_state(station, STATION_STATE_AUTOCONNECT_FULL);
 }
 
 static void station_netconfig_event_handler(enum netconfig_event event,
@@ -2307,23 +2332,20 @@ static void station_netconfig_event_handler(enum netconfig_event event,
 		station_enter_state(station, STATION_STATE_CONNECTED);
 		break;
 	case NETCONFIG_EVENT_FAILED:
-		if (station->connect_pending) {
-			struct l_dbus_message *reply = dbus_error_failed(
-						station->connect_pending);
+		station_debug_event(station, "netconfig-failed");
 
-			dbus_pending_reply(&station->connect_pending, reply);
-		}
+		netconfig_reset(station->netconfig);
 
 		if (station->state == STATION_STATE_NETCONFIG)
 			network_connect_failed(station->connected_network,
 						false);
 
-		netdev_disconnect(station->netdev,
-					station_disconnect_on_error_cb,
-					station);
-		station_reset_connection_state(station);
+		network_blacklist_add(station->connected_network,
+						station->connected_bss);
 
-		station_enter_state(station, STATION_STATE_DISCONNECTING);
+		netdev_disconnect(station->netdev,
+					station_disconnect_on_netconfig_failed,
+					station);
 		break;
 	default:
 		l_error("station: Unsupported netconfig event: %d.", event);
@@ -3342,7 +3364,7 @@ static void station_ap_directed_roam(struct station *station,
 	}
 
 	blacklist_add_bss(station->connected_bss->addr,
-				BLACKLIST_REASON_ROAM_REQUESTED);
+				BLACKLIST_REASON_AP_BUSY);
 	station_debug_event(station, "ap-roam-blacklist-added");
 
 	/*
@@ -3424,26 +3446,6 @@ static void station_event_channel_switched(struct station *station,
 	station->connected_bss->frequency = freq;
 
 	network_bss_update(network, station->connected_bss);
-}
-
-static bool station_try_next_bss(struct station *station)
-{
-	struct scan_bss *next;
-	int ret;
-
-	next = network_bss_select(station->connected_network, false);
-
-	if (!next)
-		return false;
-
-	ret = __station_connect_network(station, station->connected_network,
-						next, station->state);
-	if (ret < 0)
-		return false;
-
-	l_debug("Attempting to connect to next BSS "MAC, MAC_STR(next->addr));
-
-	return true;
 }
 
 static bool station_retry_owe_default_group(struct station *station)
@@ -3539,13 +3541,6 @@ static bool station_pmksa_fallback(struct station *station, uint16_t status)
 	return true;
 }
 
-/* A bit more concise for trying to fit these into 80 characters */
-#define IS_TEMPORARY_STATUS(code) \
-	((code) == MMPDU_STATUS_CODE_DENIED_UNSUFFICIENT_BANDWIDTH || \
-	(code) == MMPDU_STATUS_CODE_DENIED_POOR_CHAN_CONDITIONS || \
-	(code) == MMPDU_STATUS_CODE_REJECTED_WITH_SUGG_BSS_TRANS || \
-	(code) == MMPDU_STATUS_CODE_DENIED_NO_MORE_STAS)
-
 static bool station_retry_with_status(struct station *station,
 					uint16_t status_code)
 {
@@ -3553,19 +3548,37 @@ static bool station_retry_with_status(struct station *station,
 	if (station_pmksa_fallback(station, status_code))
 		goto try_next;
 
+	switch (status_code) {
 	/*
 	 * Certain Auth/Assoc failures should not cause a timeout blacklist.
 	 * In these cases we want to only temporarily blacklist the BSS until
 	 * the connection is complete.
-	 *
+	 */
+	case MMPDU_STATUS_CODE_DENIED_UNSUFFICIENT_BANDWIDTH:
+	case MMPDU_STATUS_CODE_DENIED_POOR_CHAN_CONDITIONS:
+	/*
 	 * TODO: The WITH_SUGG_BSS_TRANS case should also include a neighbor
 	 *       report IE in the frame. This would allow us to target a
 	 *       specific BSS on our next attempt. There is currently no way to
 	 *       obtain that IE, but this should be done in the future.
+	*/
+	case MMPDU_STATUS_CODE_REJECTED_WITH_SUGG_BSS_TRANS:
+		break;
+	/*
+	 * If a BSS is indicating its unable to handle more connections we will
+	 * blacklist this the same way we do for BSS's issuing BSS-TM requests
+	 * thereby avoiding roams to this BSS for the configured timeout.
 	 */
-	if (!IS_TEMPORARY_STATUS(status_code))
+	case MMPDU_STATUS_CODE_DENIED_NO_MORE_STAS:
+		blacklist_add_bss(station->connected_bss->addr,
+					BLACKLIST_REASON_AP_BUSY);
+		break;
+	/* For any other status codes, blacklist the BSS */
+	default:
 		blacklist_add_bss(station->connected_bss->addr,
 					BLACKLIST_REASON_CONNECT_FAILED);
+		break;
+	}
 
 	/*
 	 * Unconditionally network blacklist the BSS if we are retrying. This
@@ -3586,13 +3599,6 @@ static void station_connect_ok(struct station *station)
 	struct handshake_state *hs = netdev_get_handshake(station->netdev);
 
 	l_debug("");
-
-	if (station->connect_pending) {
-		struct l_dbus_message *reply =
-			l_dbus_message_new_method_return(
-						station->connect_pending);
-		dbus_pending_reply(&station->connect_pending, reply);
-	}
 
 	/*
 	 * Get a neighbor report now so future roams can avoid waiting for

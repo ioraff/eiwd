@@ -19,7 +19,7 @@ class Test(unittest.TestCase):
 
         device = wd.list_devices(1)[0]
         device.get_ordered_network('TestFT', full_scan=True)
-        device.connect_bssid(self.bss_hostapd[1].bssid)
+        device.connect_bssid(self.bss_hostapd[1].bssid, wait=False)
 
         self.bss_hostapd[1].wait_for_event(f'AP-STA-CONNECTED {device.address}')
         device.wait_for_event("connecting (netconfig)")

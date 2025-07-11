@@ -292,12 +292,22 @@ control how long a misbehaved BSS spends on the blacklist.
 
        The initial time that a BSS spends on the blacklist. Setting this to zero
        will disable blacklisting functionality in IWD.
-   * - InitialRoamRequestedTimeout
+   * - InitialRoamRequestedTimeout (**deprecated**)
      - Values: uint64 value in seconds (default: **30**)
 
-       The initial time that a BSS will be marked after a BSS requests a roam.
-       This is to aid in avoiding roaming back to BSS's which are likely
-       overloaded. Setting this to zero will disabled this form of blacklisting.
+       This setting is deprecated, please use
+       [Blacklist].InitialAccessPointBusyTimeout instead.
+   * - InitialAccessPointBusyTimeout
+     - Values: uint64 value in seconds (default: **30**)
+
+       The initial time that a BSS will be blacklisted after indicating it
+       cannot handle more connections. This is triggered by either a BSS
+       transition management request (telling IWD to roam elsewhere) or by a
+       denied authentication or association with the NO_MORE_STAS status code.
+
+       Once a BSS is blacklisted in this manor IWD will attempt to avoid it for
+       the configured amount of time.
+
    * - Multiplier
      - Values: unsigned int value greater than zero, in seconds
        (default: **30**)

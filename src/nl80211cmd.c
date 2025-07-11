@@ -177,6 +177,7 @@ static const struct {
 	{ NL80211_CMD_UNPROT_BEACON,		"Unprotected Beacon"	},
 	{ NL80211_CMD_CONTROL_PORT_FRAME_TX_STATUS,
 						"Control Port TX Status" },
+	{ NL80211_CMD_ASSOC_COMEBACK,		"Association comeback delay" },
 	{ }
 };
 

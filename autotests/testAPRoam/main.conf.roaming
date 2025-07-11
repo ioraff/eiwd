@@ -3,4 +3,4 @@ RoamThreshold=-72
 CriticalRoamThreshold=-72
 
 [Blacklist]
-InitialRoamRequestedTimeout=20
+InitialAccessPointBusyTimeout=20
