@@ -1,3 +1,8 @@
+ver 3.10:
+	Fix issue with handling neighbor report on BSS TM request.
+	Fix issue with handling deauth and FT association failure.
+	Fix issue with handling roaming and old frequencies.
+
 ver 3.9:
 	Fix issue with Access Point mode and frequency unlocking.
 	Fix issue with network configuration and BSS retry logic.

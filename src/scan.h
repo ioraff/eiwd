@@ -21,6 +21,7 @@
  */
 
 #include "src/defs.h"
+#include "src/vendor_quirks.h"
 
 struct scan_freq_set;
 struct ie_rsn_info;
@@ -79,6 +80,7 @@ struct scan_bss {
 	uint8_t *wfd;		/* Concatenated WFD IEs */
 	ssize_t wfd_size;	/* Size of Concatenated WFD IEs */
 	int8_t snr;
+	struct vendor_quirk vendor_quirks;
 	bool mde_present : 1;
 	bool cc_present : 1;
 	bool cap_rm_neighbor_report : 1;

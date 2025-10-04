@@ -95,6 +95,8 @@ static const struct diagnostic_dict_mapping diagnostic_mapping[] = {
 	{ "Frequency", 'u' },
 	{ "Channel", 'q' },
 	{ "Security", 's' },
+	{ "InactiveTime", 'u', "ms" },
+	{ "ConnectedTime", 'u', "s" },
 	{ NULL }
 };
 

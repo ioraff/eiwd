@@ -110,6 +110,14 @@ bool diagnostic_info_to_dict(const struct diagnostic_station_info *info,
 		dbus_append_dict_basic(builder, "ExpectedThroughput", 'u',
 					&info->expected_throughput);
 
+	if (info->have_inactive_time)
+		dbus_append_dict_basic(builder, "InactiveTime", 'u',
+					&info->inactive_time);
+
+	if (info->have_connected_time)
+		dbus_append_dict_basic(builder, "ConnectedTime", 'u',
+					&info->connected_time);
+
 	return true;
 }
 

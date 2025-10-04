@@ -144,6 +144,7 @@ bool wiphy_country_is_unknown(struct wiphy *wiphy);
 bool wiphy_supports_uapsd(const struct wiphy *wiphy);
 bool wiphy_supports_cmd_offchannel(const struct wiphy *wiphy);
 bool wiphy_supports_multicast_rx(const struct wiphy *wiphy);
+bool wiphy_supports_colocated_flag(const struct wiphy *wiphy);
 
 const uint8_t *wiphy_get_ht_capabilities(const struct wiphy *wiphy,
 						enum band_freq band,

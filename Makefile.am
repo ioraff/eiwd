@@ -275,6 +275,8 @@ src_iwd_SOURCES = src/main.c linux/nl80211.h src/iwd.h \
 					src/dpp.c \
 					src/udev.c \
 					src/pmksa.h src/pmksa.c \
+					src/vendor_quirks.h \
+					src/vendor_quirks.c \
 					$(eap_sources) \
 					$(builtin_sources)
 

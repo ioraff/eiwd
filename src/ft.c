@@ -223,7 +223,8 @@ static bool ft_parse_associate_resp_frame(const uint8_t *frame, size_t frame_len
 	return true;
 }
 
-static bool ft_verify_rsne(const uint8_t *rsne, const uint8_t *pmk_r0_name,
+static bool ft_verify_rsne(struct handshake_state *hs,
+				const uint8_t *rsne, const uint8_t *pmk_r0_name,
 				const uint8_t *authenticator_ie)
 {
 	/*
@@ -253,7 +254,7 @@ static bool ft_verify_rsne(const uint8_t *rsne, const uint8_t *pmk_r0_name,
 				memcmp(msg2_rsne.pmkids, pmk_r0_name, 16))
 		return false;
 
-	if (!handshake_util_ap_ie_matches(&msg2_rsne, authenticator_ie, false))
+	if (!handshake_util_ap_ie_matches(hs, &msg2_rsne, authenticator_ie, false))
 		return false;
 
 	return true;
@@ -301,7 +302,8 @@ static int parse_ies(struct handshake_state *hs,
 	is_rsn = hs->supplicant_ie != NULL;
 
 	if (is_rsn) {
-		if (!ft_verify_rsne(rsne, hs->pmk_r0_name, authenticator_ie))
+		if (!ft_verify_rsne(hs, rsne, hs->pmk_r0_name,
+					authenticator_ie))
 			goto ft_error;
 	} else if (rsne)
 		goto ft_error;
@@ -480,7 +482,7 @@ int __ft_rx_associate(uint32_t ifindex, const uint8_t *frame, size_t frame_len)
 				memcmp(msg4_rsne.pmkids, hs->pmk_r1_name, 16))
 			return -EBADMSG;
 
-		if (!handshake_util_ap_ie_matches(&msg4_rsne,
+		if (!handshake_util_ap_ie_matches(hs, &msg4_rsne,
 							hs->authenticator_ie,
 							false))
 			return -EBADMSG;

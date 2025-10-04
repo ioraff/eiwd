@@ -1810,7 +1810,7 @@ static void eapol_handle_ptk_3_of_4(struct eapol_sm *sm,
 
 	if ((rsne[1] != hs->authenticator_ie[1] ||
 			memcmp(rsne + 2, hs->authenticator_ie + 2, rsne[1])) &&
-			!handshake_util_ap_ie_matches(&rsn_info,
+			!handshake_util_ap_ie_matches(hs, &rsn_info,
 							hs->authenticator_ie,
 							hs->wpa_ie))
 		goto error_ie_different;

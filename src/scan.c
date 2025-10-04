@@ -51,6 +51,7 @@
 #include "src/mpdu.h"
 #include "src/band.h"
 #include "src/scan.h"
+#include "src/vendor_quirks.h"
 
 /* User configurable options */
 static double RANK_2G_FACTOR;
@@ -414,7 +415,8 @@ static struct l_genl_msg *scan_build_cmd(struct scan_context *sc,
 	if (params->ap_scan)
 		flags |= NL80211_SCAN_FLAG_AP;
 
-	flags |= NL80211_SCAN_FLAG_COLOCATED_6GHZ;
+	if (wiphy_supports_colocated_flag(sc->wiphy))
+		flags |= NL80211_SCAN_FLAG_COLOCATED_6GHZ;
 
 	if (flags)
 		l_genl_msg_append_attr(msg, NL80211_ATTR_SCAN_FLAGS, 4, &flags);
@@ -1219,6 +1221,11 @@ static void scan_parse_vendor_specific(struct scan_bss *bss, const void *data,
 	uint16_t cost_level;
 	uint16_t cost_flags;
 	bool dgaf_disable;
+
+	if (L_WARN_ON(len < 3))
+		return;
+
+	vendor_quirks_append_for_oui(data, &bss->vendor_quirks);
 
 	if (!bss->wpa && is_ie_wpa_ie(data, len)) {
 		bss->wpa = l_memdup(data - 2, len + 2);

@@ -53,6 +53,12 @@ Methods		dict GetDiagnostics()
 					- GCMP-256
 					- CCMP-256
 
+			InactiveTime [optional] - Time duration (in ms) for which this STA
+						  is currently inactive.
+
+			ConnectedTime [optional] - Time Duration (in s) for which this STA
+						   remains connected to the BSS.
+
 			Possible errors: net.connman.iwd.Busy
 					 net.connman.iwd.Failed
 					 net.connman.iwd.NotConnected

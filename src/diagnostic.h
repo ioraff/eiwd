@@ -43,6 +43,9 @@ struct diagnostic_station_info {
 
 	uint32_t expected_throughput;
 
+	uint32_t inactive_time;
+	uint32_t connected_time;
+
 	bool have_cur_rssi : 1;
 	bool have_avg_rssi : 1;
 	bool have_rx_mcs : 1;
@@ -50,6 +53,8 @@ struct diagnostic_station_info {
 	bool have_rx_bitrate : 1;
 	bool have_tx_bitrate : 1;
 	bool have_expected_throughput : 1;
+	bool have_inactive_time : 1;
+	bool have_connected_time : 1;
 };
 
 bool diagnostic_info_to_dict(const struct diagnostic_station_info *info,

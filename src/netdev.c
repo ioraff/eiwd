@@ -637,13 +637,28 @@ static bool netdev_parse_sta_info(struct l_genl_attr *attr,
 				info->have_tx_mcs = true;
 
 			break;
-
 		case NL80211_STA_INFO_EXPECTED_THROUGHPUT:
 			if (len != 4)
 				return false;
 
 			info->expected_throughput = l_get_u32(data);
 			info->have_expected_throughput = true;
+
+			break;
+		case NL80211_STA_INFO_INACTIVE_TIME:
+			if (len != 4)
+				return false;
+
+			info->inactive_time = l_get_u32(data);
+			info->have_inactive_time = true;
+
+			break;
+		case NL80211_STA_INFO_CONNECTED_TIME:
+			if (len != 4)
+				return false;
+
+			info->connected_time = l_get_u32(data);
+			info->have_connected_time = true;
 
 			break;
 		}
@@ -2993,13 +3008,26 @@ static void netdev_cmd_ft_reassociate_cb(struct l_genl_msg *msg,
 						void *user_data)
 {
 	struct netdev *netdev = user_data;
+	int err = l_genl_msg_get_error(msg);
 
 	netdev->connect_cmd_id = 0;
 
-	if (l_genl_msg_get_error(msg) >= 0)
+	l_debug("%d", err);
+
+	if (err >= 0)
 		return;
 
-	netdev_deauth_and_fail_connection(netdev,
+	/*
+	 * TODO: It is possible to not trigger a disconnect here and maintain
+	 *       the current connection. The issue is that IWD has already
+	 *       modified the handshake and we've lost all reference to the old
+	 *       BSS keys.
+	 *
+	 *       This could be remedied in the future by creating an entirely
+	 *       new handshake_state object for the association and only when
+	 *       the ack indicates success do we clear out the old object.
+	 */
+	netdev_disconnect_and_fail_connection(netdev,
 					NETDEV_RESULT_ASSOCIATION_FAILED,
 					MMPDU_STATUS_CODE_UNSPECIFIED);
 }
@@ -5400,6 +5428,9 @@ static void netdev_channel_switch_event(struct l_genl_msg *msg,
 	_auto_(l_free) struct band_chandef *chandef = NULL;
 
 	if (netdev->type != NL80211_IFTYPE_STATION)
+		return;
+
+	if (L_WARN_ON(!netdev->connected))
 		return;
 
 	chandef = l_new(struct band_chandef, 1);

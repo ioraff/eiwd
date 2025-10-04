@@ -31,6 +31,12 @@ Methods		array{dict} GetDiagnostics()
 
 			TxMCS [optional] - Transmitting MCS index
 
+			InactiveTime [optional] - Time duration (in ms) for which the STA
+						  connected to this BSS is currently inactive.
+
+			ConnectedTime [optional] - Time duration (in s) for which the STA
+						   remains connected to this BSS.
+
 			Possible errors: net.connman.iwd.Failed
 					 net.connman.iwd.NotConnected
 					 net.connman.iwd.NotFound
