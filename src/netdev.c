@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <alloca.h>
 #include <stdio.h>
@@ -32,8 +33,8 @@
 #include <linux/if.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
-#include <arpa/inet.h>
 #include <linux/filter.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <errno.h>
 

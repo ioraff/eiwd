@@ -25,6 +25,7 @@
 #endif
 
 #include <string.h>
+#include <alloca.h>
 #include <assert.h>
 #include <ell/ell.h>
 

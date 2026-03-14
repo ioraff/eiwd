@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <linux/if_ether.h>
 #include <netinet/in.h>

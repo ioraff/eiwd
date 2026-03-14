@@ -1,3 +1,12 @@
+ver 3.12:
+	Fix issue with handling expiration of PMKSA.
+	Fix issue with handling uninitialized buffer and PMKID.
+	Fix issue with checking for PKCS#8 key parser in unit tests.
+	Fix issue with using -std=c23 compiler setting.
+
+ver 3.11:
+	Fix issue with interface registration before acquiring name.
+
 ver 3.10:
 	Fix issue with handling neighbor report on BSS TM request.
 	Fix issue with handling deauth and FT association failure.

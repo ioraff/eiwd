@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <string.h>
 #include <alloca.h>
 #include <linux/if_ether.h>

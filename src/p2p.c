@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_ether.h>
@@ -35,6 +36,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <linux/if.h>
+#include <sys/param.h>
 
 #include <ell/ell.h>
 

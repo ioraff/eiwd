@@ -279,34 +279,34 @@ static const struct proxy_interface *known_network_proxy_find_by_name(
 	struct network_args network_args;
 	struct l_queue *match;
 	const struct proxy_interface *proxy;
+	size_t name_len;
+	char *args_name;
 
 	if (!name)
 		return NULL;
 
-	if (l_str_has_suffix(name, ".psk"))
+	name_len = strlen(name);
+
+	if (l_str_has_suffix(name, ".psk")) {
 		network_args.type = "psk";
-	else if (l_str_has_suffix(name, ".8021x"))
+		name_len -= 4;
+	} else if (l_str_has_suffix(name, ".8021x")) {
 		network_args.type = "8021x";
-	else if (l_str_has_suffix(name, ".open"))
+		name_len -= 6;
+	} else if (l_str_has_suffix(name, ".open")) {
 		network_args.type = "open";
-	else
+		name_len -= 5;
+	} else
 		network_args.type = NULL;
 
-	if (network_args.type) {
-		char *dot = strrchr(name, '.');
-
-		if (!dot)
-			/* This shouldn't ever be the case */
-			return NULL;
-
-		*dot = '\0';
-	}
-
-	network_args.name = name;
+	args_name = l_strndup(name, name_len);
+	network_args.name = args_name;
 
 	match = proxy_interface_find_all(known_network_interface_type.interface,
 						known_network_match,
 						&network_args);
+
+	l_free(args_name);
 
 	if (!match) {
 		display("No network with specified parameters was found\n");

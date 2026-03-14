@@ -1360,9 +1360,10 @@ build_ie:
 					bss->ssid, bss->ssid_len,
 					info.akm_suites);
 		if (pmksa) {
-			handshake_state_set_pmksa(hs, pmksa);
-			info.num_pmkids = 1;
-			info.pmkids = hs->pmksa->pmkid;
+			if (!L_WARN_ON(!handshake_state_set_pmksa(hs, pmksa))) {
+				info.num_pmkids = 1;
+				info.pmkids = hs->pmksa->pmkid;
+			}
 		}
 	}
 

@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <sys/types.h>
 #include <stdio.h>
 #include <errno.h>

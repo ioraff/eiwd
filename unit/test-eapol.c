@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/stat.h>
 #include <linux/if_ether.h>
 #include <ell/ell.h>
 
@@ -3923,6 +3924,18 @@ static bool aes_precheck(const void *data)
 
 static bool pkcs8_precheck(const void *data)
 {
+	struct stat st;
+
+	/*
+	 * Despite the path, this directory exists whether the module
+	 * is external or built-in.
+	 */
+	if (stat("/sys/module/pkcs8_key_parser", &st) < 0)
+		return false;
+
+	if (!S_ISDIR(st.st_mode))
+		return false;
+
 	return (IS_ENABLED(HAVE_PKCS8_SUPPORT) &&
 		l_cipher_is_supported(L_CIPHER_AES) &&
 		l_cipher_is_supported(L_CIPHER_AES_CBC) &&

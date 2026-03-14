@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#include <alloca.h>
 #include <ell/ell.h>
 
 #include "src/ie.h"

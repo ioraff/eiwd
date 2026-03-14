@@ -24,8 +24,10 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include <ell/ell.h>
 
 #include "src/missing.h"

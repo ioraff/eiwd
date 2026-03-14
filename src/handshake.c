@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -1267,6 +1268,7 @@ static struct pmksa *handshake_state_steal_pmksa(struct handshake_state *s)
 
 	pmksa = l_new(struct pmksa, 1);
 	pmksa->expiration = s->expiration;
+	s->expiration = 0;
 	memcpy(pmksa->spa, s->spa, sizeof(s->spa));
 	memcpy(pmksa->aa, s->aa, sizeof(s->aa));
 	memcpy(pmksa->ssid, s->ssid, s->ssid_len);

@@ -24,6 +24,7 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
 #include <errno.h>
 #include <arpa/inet.h>
 #include <net/if_arp.h>
@@ -31,6 +32,7 @@
 #include <limits.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>

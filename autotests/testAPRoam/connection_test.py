@@ -40,7 +40,7 @@ class Test(unittest.TestCase):
 
             to_bss.wait_for_event('AP-STA-CONNECTED %s' % self.device.address)
         else:
-            self.device.wait_for_event("no-roam-candidates")
+            self.device.wait_for_event("no-roam-candidates", timeout=20)
 
     def test_disassoc_imminent(self):
         self.initial_connection()
@@ -75,6 +75,8 @@ class Test(unittest.TestCase):
             (cls.bss_hostapd[0].bssid, "8f0000005101060603000000"),
             (cls.bss_hostapd[1].bssid, "8f0000005102060603000000"),
         ]
+
+        cls.bss_hostapd[2].disable()
 
     @classmethod
     def tearDownClass(cls):

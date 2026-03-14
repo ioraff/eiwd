@@ -25,6 +25,8 @@
 #include <config.h>
 #endif
 
+#define _GNU_SOURCE
+#include <stdlib.h>
 #include <ell/ell.h>
 
 #include "ell/useful.h"

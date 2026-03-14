@@ -28,6 +28,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <stdio.h>
+#include <strings.h>
 
 #include <ell/ell.h>
 

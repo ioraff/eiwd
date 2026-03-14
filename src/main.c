@@ -200,29 +200,12 @@ static void request_name_callback(struct l_dbus *dbus, bool success,
 {
 	if (!success) {
 		l_error("Name request failed");
-		goto fail_exit;
+		l_main_quit();
 	}
-
-	if (!l_dbus_object_manager_enable(dbus, "/"))
-		l_warn("Unable to register the ObjectManager");
-
-	if (!l_dbus_object_add_interface(dbus, IWD_BASE_PATH,
-						IWD_DAEMON_INTERFACE,
-						NULL) ||
-			!l_dbus_object_add_interface(dbus, IWD_BASE_PATH,
-						L_DBUS_INTERFACE_PROPERTIES,
-						NULL))
-		l_info("Unable to add %s and/or %s at %s",
-			IWD_DAEMON_INTERFACE, L_DBUS_INTERFACE_PROPERTIES,
-			IWD_BASE_PATH);
 
 	/* TODO: Always request nl80211 for now, ignoring auto-loading */
 	l_genl_request_family(genl, NL80211_GENL_NAME, nl80211_appeared,
 				NULL, NULL);
-	return;
-
-fail_exit:
-	l_main_quit();
 }
 
 static struct l_dbus_message *iwd_dbus_get_info(struct l_dbus *dbus,
@@ -252,12 +235,25 @@ static void dbus_ready(void *user_data)
 {
 	struct l_dbus *dbus = user_data;
 
-	l_dbus_name_acquire(dbus, "net.connman.iwd", false, false, false,
-				request_name_callback, NULL);
-
 	l_dbus_register_interface(dbus, IWD_DAEMON_INTERFACE,
 					iwd_setup_deamon_interface,
 					NULL, false);
+
+	if (!l_dbus_object_manager_enable(dbus, "/"))
+		l_warn("Unable to register the ObjectManager");
+
+	if (!l_dbus_object_add_interface(dbus, IWD_BASE_PATH,
+						IWD_DAEMON_INTERFACE,
+						NULL) ||
+			!l_dbus_object_add_interface(dbus, IWD_BASE_PATH,
+						L_DBUS_INTERFACE_PROPERTIES,
+						NULL))
+		l_info("Unable to add %s and/or %s at %s",
+			IWD_DAEMON_INTERFACE, L_DBUS_INTERFACE_PROPERTIES,
+			IWD_BASE_PATH);
+
+	l_dbus_name_acquire(dbus, "net.connman.iwd", false, false, false,
+				request_name_callback, NULL);
 }
 
 static void dbus_disconnected(void *user_data)
